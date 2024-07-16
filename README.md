@@ -1,9 +1,12 @@
 # Hardware Monitor (on LCD)
 
-The project enables the display of Raspberry Pi parameters and Ethereum node information on a 1.69" LCD screen (ST7789V2 Driver Chip).
+
+***Introducing a unique hardware dashboard for Web3Pi project.*** 
+
+The project allows for the installation of a colorful LCD display in the Argon Neo 5 case. We have designed our own 3D model of the case cover with a space for the display. The assembly is simple, using snap-fits, with no tools required. The models are open-source, so anyone can print them on a 3D printer. The source code is also open-source, allowing users to add new functionalities, customize it to their needs, or add support for new displays.
 
 <p align="center">
-  <img src="docs/img/ArgonMainImage2.jpg">
+  <img src="docs/img/ArgonMainImage1.jpg">
 </p>
 
 
@@ -15,11 +18,16 @@ The project enables the display of Raspberry Pi parameters and Ethereum node inf
 - 1.69" LCD display with ST7789V2 Driver
   - Waveshare 24382 - [product page](https://www.waveshare.com/1.69inch-lcd-module.htm)
   - Seeed Studio 104990802 - [product page](https://www.seeedstudio.com/1-69inch-240-280-Resolution-IPS-LCD-Display-Module-p-5755.html)
-
+- (Oprional) 3D printed model of Argon Neo 5 cover
 
 ### Assembly
 
-Info image LCD + RPI + Argon = XXX
+Connect the display to the Raspberry Pi according to the diagram below.  
+The colors of the cables may vary depending on the supplier and batch. Focus on the function and pin number, not the color.
+
+Connect `BL` to 3.3V on Raspberry Pi 5
+
+![RPI_lcd_module.jpg](docs/img/RPI_lcd_module.jpg)
 
 
 ### Installation
@@ -49,6 +57,18 @@ deactivate
 
 ### 3D Model
 
+The models are free, so anyone can print them on a 3D printer.
+
+![3D_Model.png](docs/img/3D_Model.png)
+
+Download 3D model: [3D_Model](docs/3D_Model)
 
 ### 3D Printing
 
+We recommend printing with PETG due to the high operating temperatures of the Raspberry Pi.  
+To ensure the snap-fits print correctly, enable 'supports everywhere.'  
+Use a 0.4mm nozzle. 0.2mm layer height.
+
+
+
+![PrintBed.png](docs/img/PrintBed.png)
