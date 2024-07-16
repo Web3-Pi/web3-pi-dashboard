@@ -71,7 +71,7 @@ def main():
 
     image1 = image1.rotate(0)
     disp.ShowImage(image1)
-    time.sleep(1) # how long to show splash image (Web3Pi logo)
+    time.sleep(5) # how long to show splash image (Web3Pi logo)
 
 
     try:
@@ -94,7 +94,7 @@ def main():
             draw = ImageDraw.Draw(image1)
 
             # Draw vertical lines
-            draw.line([(240 / 3, 0), (240 / 3, 280)], fill="BLACK", width=2, joint=None)
+            draw.line([(240 / 3, 0), (240 / 3, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
             draw.line([((240 / 3) * 2, 0), ((240 / 3) * 2, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
 
             # Draw vertical lines
