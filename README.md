@@ -27,9 +27,11 @@ We have designed our own 3D model of the enclosure cover with a space for the di
 Connect the display to the Raspberry Pi according to the diagram below.  
 The colors of the cables may vary depending on the supplier and batch. Focus on the function and pin number, not the color.
 
-Connect `BL` to `3.3V` on Raspberry Pi 5
 
-![RPI_lcd_module.jpg](docs/img/RPI_lcd_module.jpg)
+![Rpi_LCD_diagram.png](docs/img/Rpi_LCD_diagram.png)
+Diagram is valid for Raspberry Pi 4 and Pi 5
+
+If your backlight is flickering connect `BL` to `3.3V PIN 17` (on Raspberry Pi 5)
 
 
 ### Installation
