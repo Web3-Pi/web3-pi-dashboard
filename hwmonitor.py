@@ -65,7 +65,7 @@ def main():
     # Clear display.
     disp.clear()
     # Set the backlight to 100
-    disp.bl_DutyCycle(50) # ToDo: Fix hardware PWM on Rpi 5
+    disp.bl_DutyCycle(100) # ToDo: Fix hardware PWM on Rpi 5
     # If backlight is flickering a quick fix is to connect BL pin to 3.3V on Rpi to set backlight to 100%
 
     # https://www.fontsquirrel.com/fonts/jetbrains-mono
@@ -160,9 +160,8 @@ def main():
                 skip += 1
 
                 # Wait until the next call
-                #time.sleep(max(0, next_time - time.time()))
-                #next_time += (time.time() - next_time) // 5 * 5 + 5
-                time.sleep(0.1)
+                time.sleep(max(0, next_time - time.time()))
+                next_time += (time.time() - next_time) // 1 * 1 + 1
             except Exception as error:
                 logging.error("An exception occurred: " + type(error).__name__)
 
