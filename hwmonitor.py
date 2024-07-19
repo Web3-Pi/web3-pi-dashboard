@@ -26,6 +26,116 @@ import logging
 from lcd import LCD_1inch69
 from PIL import Image, ImageDraw, ImageFont
 
+import threading
+from datetime import datetime, timedelta
+from influxdb import InfluxDBClient
+
+
+class InfluxDBConnectionHandler:
+    def __init__(self, host, port, username, password, database, timeout, retry_interval, fetch_interval):
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.database = database
+        self.timeout = timeout
+        self.retry_interval = retry_interval
+        self.fetch_interval = fetch_interval
+        self.client = None
+        self.connection_thread = threading.Thread(target=self.connect_to_influxdb)
+        self.connection_thread.daemon = True
+        self.fetch_thread = threading.Thread(target=self.fetch_latest_record)
+        self.fetch_thread.daemon = True
+        self.exec = 0
+        self.node = 0
+        self.cons = 0
+
+    def connect_to_influxdb(self):
+        while self.client is None:
+            try:
+                client = InfluxDBClient(host=self.host, port=self.port, username=self.username, password=self.password,
+                                        database=self.database, timeout=self.timeout)
+                if client.ping():
+                    print("InfluxDB: Connection successful!")
+                    self.client = client
+                else:
+                    print("InfluxDB: Connection failed: ping unsuccessful")
+                    self.client = None
+            except Exception as e:
+                print("InfluxDB: An error occurred:", str(e))
+                self.client = None
+
+            if self.client is None:
+                print(f"InfluxDB: Retrying connection in {self.retry_interval} seconds...")
+                time.sleep(self.retry_interval)
+
+    def start(self):
+        self.connection_thread.start()
+        self.fetch_thread.start()
+
+    def get_client(self):
+        return self.client
+
+    def get_exec_status(self):
+        return self.exec
+
+    def get_node_status(self):
+        return self.node
+
+    def get_cons_status(self):
+        return self.cons
+
+    def fetch_latest_record(self):
+        time.sleep(3)
+        max_reconnect_time = timedelta(minutes=10)
+        while True:
+            start_time = datetime.now()
+            while self.client is None or datetime.now() - start_time < max_reconnect_time:
+                if self.client is None:
+                    print(f"InfluxDB: Client is not connected, retrying connection in {self.retry_interval} seconds...")
+                    self.connect_to_influxdb()
+                    time.sleep(self.retry_interval)
+                else:
+
+                    try:
+                        result1 = self.client.query(f'SELECT "active_percent" FROM "status_exec" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
+                        points1 = list(result1.get_points())
+                        if points1:
+                            self.exec = points1[0]['active_percent']
+
+                        result2 = self.client.query(
+                            f'SELECT "active_percent" FROM "status_node" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
+                        points2 = list(result2.get_points())
+                        if points2:
+                            self.node = points2[0]['active_percent']
+
+                        result3 = self.client.query(
+                            f'SELECT "active_percent" FROM "status_consensus" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
+                        points3 = list(result3.get_points())
+                        if points3:
+                            self.cons = points3[0]['active_percent']
+
+                        time.sleep(self.fetch_interval)
+                    except Exception as e:
+                        print("An error occurred while fetching the latest record:", str(e))
+                        self.client = None
+                        break
+
+            if datetime.now() - start_time >= max_reconnect_time:
+                print("InfluxDB: Failed to reconnect after 10 minutes. Stopping attempts to fetch data.")
+                break
+
+
+# Example usage:
+host = "localhost"
+port = 8086
+username = "geth"
+password = "geth"
+database = "ethonrpi"
+timeout = 1  # Timeout in seconds
+retry_interval = 10  # Interval in seconds between retries
+fetch_interval = 5  # Interval in seconds between fetches
+
 # Raspberry Pi pin configuration:
 RST = 27
 DC = 25
@@ -44,6 +154,7 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
 
+global client
 
 def main():
     logging.info('Hardware Monitor Start')
@@ -56,6 +167,7 @@ def main():
         logging.error("sensors_temperatures not supported")
         sys.exit("SPI is not enabled")
 
+    global hostname
     hostname = get_hostname()
 
     # display with hardware SPI:
@@ -72,6 +184,7 @@ def main():
     Font1 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 35)
     Font2 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 25)
     Font3 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 20)
+    Font4 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 15)
 
     # Create start image for drawing.
     image1 = Image.open('./img/Web3Pi_logo_0.png')
@@ -79,8 +192,13 @@ def main():
 
     image1 = image1.rotate(0)
     disp.ShowImage(image1)
-    time.sleep(5) # how long to show splash image (Web3Pi logo)
 
+    global influx_handler
+    influx_handler = InfluxDBConnectionHandler(hostname, port, username, password, database, timeout, retry_interval,
+                                               fetch_interval)
+    influx_handler.start()
+
+    time.sleep(5) # how long to show splash image (Web3Pi logo)
 
     try:
         # Get the current time (in seconds)
@@ -95,8 +213,9 @@ def main():
                 if skip % 10 == 0:
                     medium_frequency_tasks()
 
-                if skip % 30 == 0:
+                if skip % 5 == 0:
                     low_frequency_tasks()
+
 
                 # Draw background
                 image1 = Image.open('./img/lcdbg.png')
@@ -115,14 +234,10 @@ def main():
                 y = 0
                 draw.text((120 + x, 108 + y), 'CPU', fill=C_T2, font=Font2, anchor="mm")
                 draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage(int(cpu_percent))}', font=Font1, anchor="mm")
-                draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
+                draw.text((150 + x, 145 + y), '%', fill=C_T2, font=Font3, anchor="mm")
+                ct = int(cpu_temp)
+                draw.text((122 + x, 170 + y), f'{ct}°C', fill=C_T2, font=Font2, anchor="mm")
 
-                # RAM
-                x = 80
-                y = -90
-                draw.text((120 + x, 108 + y), 'RAM', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{int(mem.percent)}', fill=C_T1, font=Font1, anchor="mm")
-                draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
 
                 # DISK
                 x = -80
@@ -131,20 +246,45 @@ def main():
                 draw.text((120 + x, 140 + y), f'{int(disk.percent)}%', fill=C_T1, font=Font1, anchor="mm")
                 draw.text((122 + x, 170 + y), f'{disk_free_tb:.2f}TB', fill=C_T2, font=Font3, anchor="mm")
 
-                # CPU TEMP
+                # # CPU TEMP
+                # x = 0
+                # y = -90
+                # draw.text((120 + x, 108 + y), 'TEMP', fill=C_T2, font=Font2, anchor="mm")
+                # ct = int(cpu_temp)
+                # draw.text((120 + x, 140 + y), f'{ct}', fill=C_T1, font=Font1, anchor="mm")
+                # draw.text((145 + x, 170 + y), '°C', fill=C_T2, font=Font2, anchor="mm")
+
+                # EXEC
+                x = -80
+                y = -90
+                draw.text((120 + x, 108 + y), 'EXEC', fill=C_T2, font=Font2, anchor="mm")
+                draw.text((120 + x, 140 + y), f'{map_status(exec)}', fill=map_status_color(exec), font=Font4, anchor="mm")
+
+                # NODE
                 x = 0
                 y = -90
-                draw.text((120 + x, 108 + y), 'TEMP', fill=C_T2, font=Font2, anchor="mm")
-                ct = int(cpu_temp)
-                draw.text((120 + x, 140 + y), f'{ct}', fill=C_T1, font=Font1, anchor="mm")
-                draw.text((145 + x, 170 + y), '°C', fill=C_T2, font=Font2, anchor="mm")
+                draw.text((120 + x, 108 + y), 'NODE', fill=C_T2, font=Font2, anchor="mm")
+                draw.text((120 + x, 140 + y), f'{map_status(node)}', fill=map_status_color(node), font=Font4, anchor="mm")
 
-                # SWAP
+                # CONS
+                x = 80
+                y = -90
+                draw.text((120 + x, 108 + y), 'CONS', fill=C_T2, font=Font2, anchor="mm")
+                draw.text((120 + x, 140 + y), f'{map_status(cons)}', fill=map_status_color(cons), font=Font4, anchor="mm")
+
+                # RAM
                 x = 80
                 y = 0
-                draw.text((120 + x, 108 + y), 'SWAP', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{int(swap.percent)}', fill=C_T1, font=Font1, anchor="mm")
+                draw.text((120 + x, 108 + y), 'RAM', fill=C_T2, font=Font2, anchor="mm")
+                draw.text((120 + x, 140 + y), f'{int(mem.percent)}', fill=C_T1, font=Font1, anchor="mm")
                 draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
+
+                # SWAP
+                # x = 80
+                # y = 0
+                # draw.text((120 + x, 108 + y), 'SWAP', fill=C_T2, font=Font2, anchor="mm")
+                # draw.text((120 + x, 140 + y), f'{int(swap.percent)}', fill=C_T1, font=Font1, anchor="mm")
+                # draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
 
                 # Local IP / HostName
                 x = 40
@@ -164,20 +304,47 @@ def main():
                 next_time += (time.time() - next_time) // 1 * 1 + 1
             except Exception as error:
                 logging.error("An exception occurred: " + type(error).__name__)
+                time.sleep(1)
 
     except KeyboardInterrupt:
         logging.info("Loop interrupted by user")
     except Exception as error:
         logging.error("An exception occurred: " + type(error).__name__)
 
+
     logging.info('End forever loop')
 
     logging.info('Hardware Monitor End')
 
 
+# SELECT "active_percent" FROM "status_node" WHERE "host"::tag =~ /^neomicron_s$/ ORDER BY time DESC LIMIT 1
+# SELECT "active_percent" FROM "status_exec" WHERE "host"::tag =~ /^neomicron_s$/ ORDER BY time DESC LIMIT 1
+# SELECT "active_percent" FROM "status_consensus" WHERE "host"::tag =~ /^neomicron_s$/ ORDER BY time DESC LIMIT 1
 
+# SELECT "active_percent" FROM "status_exec" WHERE "host"::tag =~ /^eop-12_s$/ AND time >= 1721343563685ms and time <= 1721386763685ms ORDER BY time ASC
+def map_status(value):
+    if 0 <= value <= 25:
+        return 'inactive'
+    elif 26 <= value <= 45:
+        return 'waiting'
+    elif 46 <= value <= 76:
+        return 'syncing'
+    elif 77 <= value <= 100:
+        return 'synced'
+    else:
+        return 'unknown'
 
-
+def map_status_color(value):
+    if 0 <= value <= 25:
+        return '#FF0000'
+    elif 26 <= value <= 45:
+        return '#FFFF00'
+    elif 46 <= value <= 76:
+        return '#FFA500'
+    elif 77 <= value <= 100:
+        return '#00FF00' # 'synced' green
+    else:
+        return '#FFFFFF'
 
 def get_cpu_temperature():
     temps = psutil.sensors_temperatures()
@@ -223,9 +390,14 @@ def low_frequency_tasks():
     global disk
     global disk_free_tb
     global ip_local_address
+    global exec, node, cons
     disk = psutil.disk_usage("/home/")
     disk_free_tb = disk.used / 1024 / 1024 / 1024 / 1024
     ip_local_address = get_ip_address()
+    exec = influx_handler.get_exec_status()
+    node = influx_handler.get_node_status()
+    cons = influx_handler.get_cons_status()
+
 
 def value_to_hex_color_cpu_usage(value):
     if not (0 <= value <= 100):

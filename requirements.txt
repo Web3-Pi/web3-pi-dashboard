@@ -1,5 +1,5 @@
 psutil~=6.0.0
-#influxdb~=5.3.2
+influxdb~=5.3.2
 lgpio~=0.2.2.0
 pillow~=10.4.0
 numpy~=2.0.0

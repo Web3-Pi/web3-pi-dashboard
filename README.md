@@ -85,6 +85,10 @@ Use a 0.4 mm nozzle.
 0.2 mm layer height or smaller.  
 Our models are printed on [Original Prusa i3 MK3S+](https://www.prusa3d.com/pl/produkt/drukarka-3d-original-prusa-i3-mk3s-3/)
 
-If you do not have access to a 3D printer, you can order an online print from one of the providers such as [JLC3DP](https://jlc3dp.com/3d-printing-quote).
+If you do not have access to a 3D printer, you can order an online print from one of the providers such as [JLC3DP](https://jlc3dp.com/3d-printing-quote).   
+There are various materials technology and you can choose from:
+- FDM - ABS, ASA or PA12-CF
+- MJF - PA16-HP Nylon
+- SLS - 3201PA-F Nylon
 
 ![PrintBed.png](docs/img/PrintBed.png)
