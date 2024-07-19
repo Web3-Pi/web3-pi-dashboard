@@ -132,9 +132,9 @@ port = 8086
 username = "geth"
 password = "geth"
 database = "ethonrpi"
-timeout = 1  # Timeout in seconds
+timeout = 3  # Timeout in seconds
 retry_interval = 10  # Interval in seconds between retries
-fetch_interval = 5  # Interval in seconds between fetches
+fetch_interval = 30  # Interval in seconds between fetches
 
 # Raspberry Pi pin configuration:
 RST = 27
