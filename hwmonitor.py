@@ -97,7 +97,14 @@ def main():
                                                fetch_interval)
     influx_handler.start()
 
-    time.sleep(5) # how long to show splash image (Web3Pi logo)
+    splash_time = 5
+    time.sleep(splash_time - 1) # how long to show splash image (Web3Pi logo)
+
+    low_frequency_tasks()
+    high_frequency_tasks()
+    medium_frequency_tasks()
+
+    time.sleep(1)
 
     try:
         # Get the current time (in seconds)
@@ -215,6 +222,13 @@ def main():
 
     logging.info('Hardware Monitor End')
 
+def print_stats():
+    try:
+        global cpu_percent, cpu_temp, disk, disk_free_tb, ip_local_address, ram, swap, exec, node, cons
+        logging.info(f'Values -> CPU: {int(cpu_percent)}%, CPU_TEMP: {int(cpu_temp)}°C, RAM: {int(mem.percent)}%, SWAP: {int(swap.percent)}%, DISK: {int(disk.percent)}%, EXECUTION: {map_status(exec)}, NODE: {map_status(node)}, CONSENSUS: {map_status(cons)}')
+    except Exception as error:
+        logging.error("An exception occurred: " + type(error).__name__)
+
 
 def map_status(value):
     if 0 <= value <= 25:
@@ -289,6 +303,8 @@ def medium_frequency_tasks():
     # global cpu_rpm
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
+
+    print_stats()
 
     # nvme_temp = getNvmeTemperature()
     # cpu_rpm = getCpuRpm()

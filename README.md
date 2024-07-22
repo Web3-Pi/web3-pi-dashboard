@@ -48,8 +48,8 @@ Mount the enclosure cover and secure it with two screws. Make sure to arrange th
 
 ```shell
 cd APPROPRIATE_DIRECTORY
-git clone https://github.com/Web3-Pi/hardware-monitor.git
-cd hardware-monitor
+git clone https://github.com/Web3-Pi/web3-pi-dashboard.git
+cd web3-pi-dashboard
 python3 -m venv venv
 source venv/bin/activate
 python3 -m pip install -r requirements.txt
@@ -62,7 +62,7 @@ deactivate
 To run the service, follow the steps below:
 
 ```shell
-cd APPROPRIATE_DIRECTORY/hardware-monitor
+cd APPROPRIATE_DIRECTORY/web3-pi-dashboard
 source venv/bin/activate
 python3 hwmonitor.py  # Ctrl-c to shut down the monitor
 deactivate
