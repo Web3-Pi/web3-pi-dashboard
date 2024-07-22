@@ -1,3 +1,4 @@
+import logging
 import time
 import threading
 from datetime import datetime, timedelta
@@ -28,17 +29,17 @@ class InfluxDBConnectionHandler:
                 client = InfluxDBClient(host=self.host, port=self.port, username=self.username, password=self.password,
                                         database=self.database, timeout=self.timeout)
                 if client.ping():
-                    print("InfluxDB: Connection successful!")
+                    logging.info("InfluxDB: Connection successful!")
                     self.client = client
                 else:
-                    print("InfluxDB: Connection failed: ping unsuccessful")
+                    logging.warning("InfluxDB: Connection failed: ping unsuccessful")
                     self.client = None
             except Exception as e:
-                print("InfluxDB: An error occurred:", str(e))
+                logging.error("InfluxDB: An error occurred:", str(e))
                 self.client = None
 
             if self.client is None:
-                print(f"InfluxDB: Retrying connection in {self.retry_interval} seconds...")
+                logging.info(f"InfluxDB: Retrying connection in {self.retry_interval} seconds...")
                 time.sleep(self.retry_interval)
 
     def start(self):
@@ -64,11 +65,11 @@ class InfluxDBConnectionHandler:
             start_time = datetime.now()
             while self.client is None or datetime.now() - start_time < max_reconnect_time:
                 if self.client is None:
-                    print(f"InfluxDB: Client is not connected, retrying connection in {self.retry_interval} seconds...")
+                    logging.info(f"InfluxDB: Client is not connected, retrying connection in {self.retry_interval} seconds...")
                     self.connect_to_influxdb()
                     time.sleep(self.retry_interval)
                 else:
-
+                    start_time = datetime.now()
                     try:
                         result1 = self.client.query(f'SELECT "active_percent" FROM "status_exec" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
                         points1 = list(result1.get_points())
@@ -87,12 +88,14 @@ class InfluxDBConnectionHandler:
                         if points3:
                             self.cons = points3[0]['active_percent']
 
+                        # logging.info(f'InfluxDB: {self.exec} / {self.node} / {self.cons}')
+
                         time.sleep(self.fetch_interval)
                     except Exception as e:
-                        print("An error occurred while fetching the latest record:", str(e))
+                        logging.error(f'InfluxDB: An error occurred while fetching the latest record: {str(e)}')
                         self.client = None
                         break
 
             if datetime.now() - start_time >= max_reconnect_time:
-                print("InfluxDB: Failed to reconnect after 10 minutes. Stopping attempts to fetch data.")
+                logging.warning("InfluxDB: Failed to reconnect after 10 minutes. Stopping attempts to fetch data.")
                 break
