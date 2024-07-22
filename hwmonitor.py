@@ -25,108 +25,9 @@ import netifaces
 import logging
 from lcd import LCD_1inch69
 from PIL import Image, ImageDraw, ImageFont
+from db.InfluxDBConnection import InfluxDBConnectionHandler
 
-import threading
-from datetime import datetime, timedelta
-from influxdb import InfluxDBClient
-
-
-class InfluxDBConnectionHandler:
-    def __init__(self, host, port, username, password, database, timeout, retry_interval, fetch_interval):
-        self.host = host
-        self.port = port
-        self.username = username
-        self.password = password
-        self.database = database
-        self.timeout = timeout
-        self.retry_interval = retry_interval
-        self.fetch_interval = fetch_interval
-        self.client = None
-        self.connection_thread = threading.Thread(target=self.connect_to_influxdb)
-        self.connection_thread.daemon = True
-        self.fetch_thread = threading.Thread(target=self.fetch_latest_record)
-        self.fetch_thread.daemon = True
-        self.exec = 0
-        self.node = 0
-        self.cons = 0
-
-    def connect_to_influxdb(self):
-        while self.client is None:
-            try:
-                client = InfluxDBClient(host=self.host, port=self.port, username=self.username, password=self.password,
-                                        database=self.database, timeout=self.timeout)
-                if client.ping():
-                    print("InfluxDB: Connection successful!")
-                    self.client = client
-                else:
-                    print("InfluxDB: Connection failed: ping unsuccessful")
-                    self.client = None
-            except Exception as e:
-                print("InfluxDB: An error occurred:", str(e))
-                self.client = None
-
-            if self.client is None:
-                print(f"InfluxDB: Retrying connection in {self.retry_interval} seconds...")
-                time.sleep(self.retry_interval)
-
-    def start(self):
-        self.connection_thread.start()
-        self.fetch_thread.start()
-
-    def get_client(self):
-        return self.client
-
-    def get_exec_status(self):
-        return self.exec
-
-    def get_node_status(self):
-        return self.node
-
-    def get_cons_status(self):
-        return self.cons
-
-    def fetch_latest_record(self):
-        time.sleep(3)
-        max_reconnect_time = timedelta(minutes=10)
-        while True:
-            start_time = datetime.now()
-            while self.client is None or datetime.now() - start_time < max_reconnect_time:
-                if self.client is None:
-                    print(f"InfluxDB: Client is not connected, retrying connection in {self.retry_interval} seconds...")
-                    self.connect_to_influxdb()
-                    time.sleep(self.retry_interval)
-                else:
-
-                    try:
-                        result1 = self.client.query(f'SELECT "active_percent" FROM "status_exec" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
-                        points1 = list(result1.get_points())
-                        if points1:
-                            self.exec = points1[0]['active_percent']
-
-                        result2 = self.client.query(
-                            f'SELECT "active_percent" FROM "status_node" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
-                        points2 = list(result2.get_points())
-                        if points2:
-                            self.node = points2[0]['active_percent']
-
-                        result3 = self.client.query(
-                            f'SELECT "active_percent" FROM "status_consensus" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
-                        points3 = list(result3.get_points())
-                        if points3:
-                            self.cons = points3[0]['active_percent']
-
-                        time.sleep(self.fetch_interval)
-                    except Exception as e:
-                        print("An error occurred while fetching the latest record:", str(e))
-                        self.client = None
-                        break
-
-            if datetime.now() - start_time >= max_reconnect_time:
-                print("InfluxDB: Failed to reconnect after 10 minutes. Stopping attempts to fetch data.")
-                break
-
-
-# Example usage:
+# InfluxDB config
 host = "localhost"
 port = 8086
 username = "geth"
@@ -136,7 +37,7 @@ timeout = 3  # Timeout in seconds
 retry_interval = 10  # Interval in seconds between retries
 fetch_interval = 30  # Interval in seconds between fetches
 
-# Raspberry Pi pin configuration:
+# Raspberry Pi LCD pin configuration:
 RST = 27
 DC = 25
 BL = 18
@@ -153,8 +54,6 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
-
-global client
 
 def main():
     logging.info('Hardware Monitor Start')
@@ -317,11 +216,6 @@ def main():
     logging.info('Hardware Monitor End')
 
 
-# SELECT "active_percent" FROM "status_node" WHERE "host"::tag =~ /^neomicron_s$/ ORDER BY time DESC LIMIT 1
-# SELECT "active_percent" FROM "status_exec" WHERE "host"::tag =~ /^neomicron_s$/ ORDER BY time DESC LIMIT 1
-# SELECT "active_percent" FROM "status_consensus" WHERE "host"::tag =~ /^neomicron_s$/ ORDER BY time DESC LIMIT 1
-
-# SELECT "active_percent" FROM "status_exec" WHERE "host"::tag =~ /^eop-12_s$/ AND time >= 1721343563685ms and time <= 1721386763685ms ORDER BY time ASC
 def map_status(value):
     if 0 <= value <= 25:
         return 'inactive'
@@ -347,6 +241,21 @@ def map_status_color(value):
         return '#FFFFFF'
 
 def get_cpu_temperature():
+    """
+    Retrieves the current CPU temperature using the psutil library.
+
+    This function utilizes the `psutil.sensors_temperatures` method to fetch temperature
+    sensor data from the system. If the sensors are not supported or an error occurs,
+    it logs the issue and returns a default value of 0.
+
+    Returns:
+        float: The current CPU temperature in degrees Celsius. Returns 0 if sensor
+               data is not available or an error occurs.
+
+    Raises:
+        KeyError: If the temperature data structure does not contain the expected keys.
+                  This is caught and handled within the function.
+    """
     temps = psutil.sensors_temperatures()
     if not temps:
         logging.error("w: sensors_temperatures not supported")
@@ -403,7 +312,7 @@ def value_to_hex_color_cpu_usage(value):
     if not (0 <= value <= 100):
         return C_BG
 
-    # Definicja kolorów w formacie RGB
+    # Definition of Colors in RGB Format
     green = (0, 255, 0)
     yellow = (255, 255, 0)
     red = (255, 0, 0)
