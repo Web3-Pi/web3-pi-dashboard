@@ -15,7 +15,7 @@ We have designed our own 3D model of the enclosure cover with a space for the di
 
 - Python >= 3.9
 - Run on Raspberry Pi
-- SPI interface enabled (default on Web3Pi image)
+- [SPI interface enabled](docs/EnableSPI.md) (default on Web3Pi image)
 - 1.69" LCD display with ST7789V2 Driver
   - Waveshare 24382 - [product page](https://www.waveshare.com/1.69inch-lcd-module.htm)
   - Seeed Studio 104990802 - [product page](https://www.seeedstudio.com/1-69inch-240-280-Resolution-IPS-LCD-Display-Module-p-5755.html)
