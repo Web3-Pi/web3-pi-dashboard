@@ -46,28 +46,36 @@ Mount the enclosure cover and secure it with two screws. Make sure to arrange th
 
 ## Installation
 
+First, download the repository.
+
 ```shell
-cd APPROPRIATE_DIRECTORY
+sudo apt-get install git
 git clone https://github.com/Web3-Pi/web3-pi-dashboard.git
-cd web3-pi-dashboard
-python3 -m venv venv
-source venv/bin/activate
-python3 -m pip install -r requirements.txt
-deactivate
 ```
 
+Then, you can run the program as a service. The program will start automatically with the system startup. (recommended)
 
-## Simple use
-
-To run the service, follow the steps below:
+### Run as a service
 
 ```shell
-cd APPROPRIATE_DIRECTORY/web3-pi-dashboard
-source venv/bin/activate
-python3 hwmonitor.py  # Ctrl-c to shut down the monitor
-deactivate
+cd web3-pi-dashboard
+chmod +x create_service.sh
+sudo ./create_service.sh
 ```
 
+To **stop** the program, execute `sudo systemctl stop w3p_hwm.service`
+
+To **uninstall** the service, execute `sudo ./remove_service.sh`
+
+Alternatively, you can run it once. The program will stop when you close the console.
+### or run one time
+
+```shell
+cd web3-pi-dashboard
+chmod +x run.sh
+./run.sh
+```
+To stop the program, press Ctrl+C.
 
 ## 3D Model
 
