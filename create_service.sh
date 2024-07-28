@@ -53,4 +53,9 @@ systemctl start $SERVICE_NAME
 
 echo "The service $SERVICE_NAME has been created and started."
 
-echo "The first startup may take around a dozen seconds because a 'venv' is being created and the required packages are being installed."
+BGreen='\033[1;32m'     # Green
+NC='\033[0m'            # No Color
+echo " "
+echo -e "${BGreen}The first startup may take around a dozen seconds because a 'venv' is being created and the required packages are being installed.${NC}"
+echo -e "${BGreen}Please wait...${NC}"
+echo " "
