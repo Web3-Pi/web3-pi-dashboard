@@ -53,9 +53,11 @@ sudo apt-get install git
 git clone https://github.com/Web3-Pi/web3-pi-dashboard.git
 ```
 
-Then, you can run the program as a service. The program will start automatically with the system startup. (recommended)
+Then, you can run the program as a service. The program will start automatically with the system startup.
 
-### Run as a service
+Alternatively, you can run it once. The program will stop when you close the console.
+
+### Run as a service - (recommended)   
 
 ```shell
 cd web3-pi-dashboard
@@ -67,8 +69,11 @@ To **stop** the program, execute `sudo systemctl stop w3p_hwm.service`
 
 To **uninstall** the service, execute `sudo ./remove_service.sh`
 
-Alternatively, you can run it once. The program will stop when you close the console.
+
 ### or run one time
+
+If you do not want to run the program as a service, you can run it once.   
+Note: Do not use both methods simultaneously.
 
 ```shell
 cd web3-pi-dashboard
