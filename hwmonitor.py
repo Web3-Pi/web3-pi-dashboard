@@ -27,6 +27,11 @@ from lcd import LCD_1inch69
 from PIL import Image, ImageDraw, ImageFont
 from db.InfluxDBConnection import InfluxDBConnectionHandler
 
+# Choose how to display CPU usage percentages
+SHOW_PER_CORE = False
+# False = [0 - 100%]
+# True  = [0 - 400%]
+
 # InfluxDB config
 host = "localhost"
 port = 8086
@@ -138,8 +143,13 @@ def main():
                 x = 0
                 y = 0
                 draw.text((120 + x, 108 + y), 'CPU', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage(int(cpu_percent))}', font=Font1, anchor="mm")
-                draw.text((150 + x, 145 + y), '%', fill=C_T2, font=Font3, anchor="mm")
+
+                if SHOW_PER_CORE:
+                    draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage_400(int(cpu_percent))}', font=Font1, anchor="mm")
+                    draw.text((150 + x, 108 + y), '%', fill=C_T2, font=Font3, anchor="mm")
+                else:
+                    draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage(int(cpu_percent))}', font=Font1, anchor="mm")
+                    draw.text((150 + x, 145 + y), '%', fill=C_T2, font=Font3, anchor="mm")
                 ct = int(cpu_temp)
                 draw.text((122 + x, 170 + y), f'{ct}°C', fill=C_T2, font=Font2, anchor="mm")
 
@@ -288,7 +298,15 @@ def high_frequency_tasks():
     logging.debug("high_frequency_tasks()")
     global cpu_percent
     global cpu_temp
-    cpu_percent = psutil.cpu_percent()
+    global SHOW_PER_CORE
+
+    if SHOW_PER_CORE:
+        cpu_percent = sum(psutil.cpu_percent(percpu=True))
+    else:
+        cpu_percent = psutil.cpu_percent()
+
+    #cpu_percent = psutil.cpu_percent()
+
     cpu_temp = get_cpu_temperature()
     #logging.info(f'CPU_TEMP= {getCpuTemperature()} °C')
 
@@ -341,6 +359,30 @@ def value_to_hex_color_cpu_usage(value):
     else:
         # Interpolacja między żółtym a czerwonym
         ratio = (value - 50) / 50
+        r = int(yellow[0] + ratio * (red[0] - yellow[0]))
+        g = int(yellow[1] + ratio * (red[1] - yellow[1]))
+        b = int(yellow[2] + ratio * (red[2] - yellow[2]))
+
+    return f'#{r:02x}{g:02x}{b:02x}'
+
+def value_to_hex_color_cpu_usage_400(value):
+    if not (0 <= value <= 400):
+        return C_BG
+
+    # Definition of Colors in RGB Format
+    green = (0, 255, 0)
+    yellow = (255, 255, 0)
+    red = (255, 0, 0)
+
+    if value <= 200:
+        # Interpolacja między zielonym a żółtym
+        ratio = value / 200
+        r = int(green[0] + ratio * (yellow[0] - green[0]))
+        g = int(green[1] + ratio * (yellow[1] - green[1]))
+        b = int(green[2] + ratio * (yellow[2] - green[2]))
+    else:
+        # Interpolacja między żółtym a czerwonym
+        ratio = (value - 200) / 200
         r = int(yellow[0] + ratio * (red[0] - yellow[0]))
         g = int(yellow[1] + ratio * (red[1] - yellow[1]))
         b = int(yellow[2] + ratio * (red[2] - yellow[2]))

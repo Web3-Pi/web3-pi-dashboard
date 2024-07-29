@@ -82,6 +82,24 @@ chmod +x run.sh
 ```
 To stop the program, press Ctrl+C.
 
+## Customisation
+
+In the file `hwmonitor.py`, there is a flag `SHOW_PER_CORE` that determines whether the CPU usage percentage should be in the range of `0-100%` or `0-400%`.
+
+0-400% represents the summed load of each core in the Raspberry Pi.
+
+```python
+# Choose how to display CPU usage percentages
+SHOW_PER_CORE = False
+# False = [0 - 100%]
+# True  = [0 - 400%]
+```
+note: Restart the service after making changes.   
+```shell
+sudo systemctl restart w3p_hwm.service
+```
+
+
 ## 3D Model
 
 The models are free, so anyone can print them on a 3D printer.
