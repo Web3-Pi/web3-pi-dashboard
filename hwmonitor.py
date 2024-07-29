@@ -113,13 +113,12 @@ def main():
         logging.info('Entering forever loop')
         while True:
             try:
-                #logging.info('loop')
                 high_frequency_tasks() # every second
 
                 if skip % 10 == 0:
                     medium_frequency_tasks()
 
-                if skip % 5 == 0:
+                if skip % 30 == 0:
                     low_frequency_tasks()
 
 
