@@ -333,7 +333,13 @@ def low_frequency_tasks():
     global disk_free_tb
     global ip_local_address
     global exec, node, cons
-    disk = psutil.disk_usage("/home/")
+
+    # ToDo: Check and set it at start for optimization.
+    if os.path.exists("/mnt/storage/") and os.path.isdir("/mnt/storage/"):
+        disk = psutil.disk_usage("/mnt/storage/")
+    else:
+        disk = psutil.disk_usage("/home/")
+
     disk_free_tb = disk.used / 1024 / 1024 / 1024 / 1024
     ip_local_address = get_ip_address()
     exec = influx_handler.get_exec_status()
