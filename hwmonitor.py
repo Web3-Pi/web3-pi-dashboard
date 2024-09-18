@@ -39,7 +39,7 @@ username = "geth"
 password = "geth"
 database = "ethonrpi"
 timeout = 3  # Timeout in seconds
-retry_interval = 10  # Interval in seconds between retries
+retry_interval = 256  # Interval in seconds between retries
 fetch_interval = 30  # Interval in seconds between fetches
 
 # Raspberry Pi LCD pin configuration:
@@ -59,6 +59,73 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
+
+def check_system_state():
+    # if os.path.isfile('/opt/web3pi/status.txt'):
+    #     print("Plik istnieje")
+    # else:
+    #     logging.info('status.txt not present')
+
+    stat_file_path = '/opt/web3pi/status.txt'
+
+    try:
+        with open(stat_file_path, 'r') as file:
+            stat_file_content = file.read()
+            if "Installation completed" in stat_file_content:
+                logging.info("Found 'Installation completed' in the status file")
+                show_install_state(stat_file_content)
+                #main()
+            else:
+                logging.info("Not Found 'Installation completed' in the status file")
+                show_install_state(stat_file_content)
+    except FileNotFoundError:
+        logging.info("The file does not exist (/opt/web3pi/status.txt)")
+        main()
+
+
+def show_install_state(stat_file_content):
+    # display with hardware SPI:
+    disp = LCD_1inch69.LCD_1inch69()
+    # Initialize library.
+    disp.Init()
+    # Clear display.
+    disp.clear()
+    # Set the backlight to 100
+    disp.bl_DutyCycle(100)  # ToDo: Fix hardware PWM on Rpi 5
+    # If backlight is flickering a quick fix is to connect BL pin to 3.3V on Rpi to set backlight to 100%
+
+    # https://www.fontsquirrel.com/fonts/jetbrains-mono
+    Font1 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 35)
+    Font2 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 25)
+    Font3 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 20)
+    Font4 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 15)
+
+    # Create start image for drawing.
+    image1 = Image.open('./img/Web3Pi_logo_0.png')
+    draw = ImageDraw.Draw(image1)
+
+    image1 = image1.rotate(0)
+    disp.ShowImage(image1)
+
+    time.sleep(1)
+
+    # Draw background
+    image1 = Image.open('./img/lcdbg.png')
+    draw = ImageDraw.Draw(image1)
+
+    draw.text((120 , 50), 'Web3 Pi\nInstallation\nin progress', fill=C_T2, font=Font2, anchor="mm",
+        align="center")
+
+    stat_text = stat_file_content.replace('STAGE ', 'STAGE_')
+    stat_text = stat_text.replace(' ', '\n')
+    draw.text((120, 180), stat_text, fill=C_T1, font=Font3, anchor="mm",
+              align="center")
+
+    # Send image to lcd
+    disp.ShowImage(image1)
+
+
+
 
 def main():
     logging.info('Hardware Monitor Start')
@@ -483,7 +550,7 @@ if __name__ == '__main__':
     if check_python_version():
         if is_raspberry_pi():
             if is_spi_enabled() or is_spi_enabled_config():
-                main()
+                check_system_state()
             else:
                 logging.error("SPI is not enabled on Raspberry Pi")
                 sys.exit("SPI is not enabled")
