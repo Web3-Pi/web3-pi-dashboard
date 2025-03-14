@@ -38,16 +38,16 @@ jobs:
           chmod +x web3-pi-dashboard-bin/hwmonitor
           cp -r font/ web3-pi-dashboard-bin/
           cp -r img/ web3-pi-dashboard-bin/
-          zip -r web3-pi-dashboard.zip web3-pi-dashboard-bin/
+          zip -r web3-pi-dashboard-bin.zip web3-pi-dashboard-bin/
 
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          files: web3-pi-dashboard.zip
+          files: web3-pi-dashboard-bin.zip
           name: Release ${{ github.ref_name }}
           body: |
-            Web3-Pi Dashboard Release ${{ github.ref_name }}
+            Web3 Pi Dashboard Release ${{ github.ref_name }}
 
             This release was automatically built and published by GitHub Actions.
           draft: false
