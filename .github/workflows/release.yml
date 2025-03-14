@@ -1,5 +1,8 @@
 name: Build and Release Dashboard
 
+permissions:
+  contents: write
+
 on:
   push:
     tags:
@@ -49,3 +52,5 @@ jobs:
             This release was automatically built and published by GitHub Actions.
           draft: false
           prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
