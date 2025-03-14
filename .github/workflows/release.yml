@@ -1,0 +1,51 @@
+name: Build and Release Dashboard
+
+on:
+  push:
+    tags:
+      - "v*" # This will trigger on any tag that starts with v (e.g., v0.1.1, v1.2)
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies and build
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install patchelf
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+          pip install nuitka
+          nuitka --onefile --standalone hwmonitor.py
+
+      - name: Prepare release artifacts
+        run: |
+          mkdir web3-pi-dashboard-bin
+          cp hwmonitor.bin web3-pi-dashboard-bin/hwmonitor
+          chmod +x web3-pi-dashboard-bin/hwmonitor
+          cp -r font/ web3-pi-dashboard-bin/
+          cp -r img/ web3-pi-dashboard-bin/
+          tar -czvf web3-pi-dashboard-${GITHUB_REF#refs/tags/}.tar.gz web3-pi-dashboard-bin/
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: web3-pi-dashboard-*.tar.gz
+          name: Release ${{ github.ref_name }}
+          body: |
+            Web3-Pi Dashboard Release ${{ github.ref_name }}
+
+            This release was automatically built and published by GitHub Actions.
+          draft: false
+          prerelease: false
