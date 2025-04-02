@@ -60,16 +60,19 @@ class InfluxDBConnectionHandler:
 
     def fetch_latest_record(self):
         time.sleep(3)
-        max_reconnect_time = timedelta(minutes=10)
+        max_reconnect_attempts = 60
+        current_attempt = 0
+        logging.info(f'InfluxDB: zaraz bedzie while True')
         while True:
-            start_time = datetime.now()
-            while self.client is None or datetime.now() - start_time < max_reconnect_time:
+            logging.info(f'InfluxDB: while True odpalone')
+            while self.client is None or current_attempt < max_reconnect_attempts:
+                current_attempt += 1
+
                 if self.client is None:
                     logging.info(f"InfluxDB: Client is not connected, retrying connection in {self.retry_interval} seconds...")
                     self.connect_to_influxdb()
                     time.sleep(self.retry_interval)
                 else:
-                    start_time = datetime.now()
                     try:
                         result1 = self.client.query(f'SELECT "active_percent" FROM "status_exec" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
                         points1 = list(result1.get_points())
@@ -88,7 +91,7 @@ class InfluxDBConnectionHandler:
                         if points3:
                             self.cons = points3[0]['active_percent']
 
-                        # logging.info(f'InfluxDB: {self.exec} / {self.node} / {self.cons}')
+                        logging.info(f'InfluxDB: {self.exec} / {self.node} / {self.cons}')
 
                         time.sleep(self.fetch_interval)
                     except Exception as e:
@@ -96,6 +99,6 @@ class InfluxDBConnectionHandler:
                         self.client = None
                         break
 
-            if datetime.now() - start_time >= max_reconnect_time:
+            if current_attempt >= max_reconnect_attempts:
                 logging.warning("InfluxDB: Failed to reconnect after 10 minutes. Stopping attempts to fetch data.")
                 break
