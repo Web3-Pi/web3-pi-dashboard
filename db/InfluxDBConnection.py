@@ -62,9 +62,7 @@ class InfluxDBConnectionHandler:
         time.sleep(3)
         max_reconnect_attempts = 60
         current_attempt = 0
-        logging.info(f'InfluxDB: zaraz bedzie while True')
         while True:
-            logging.info(f'InfluxDB: while True odpalone')
             while self.client is None or current_attempt < max_reconnect_attempts:
                 current_attempt += 1
 
@@ -91,7 +89,7 @@ class InfluxDBConnectionHandler:
                         if points3:
                             self.cons = points3[0]['active_percent']
 
-                        logging.info(f'InfluxDB: {self.exec} / {self.node} / {self.cons}')
+                        # logging.info(f'InfluxDB: {self.exec} / {self.node} / {self.cons}')
 
                         time.sleep(self.fetch_interval)
                     except Exception as e:
