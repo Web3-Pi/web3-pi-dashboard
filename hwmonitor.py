@@ -23,6 +23,7 @@ import psutil
 import socket
 import netifaces
 import logging
+import json
 from lcd import LCD_1inch69
 from PIL import Image, ImageDraw, ImageFont
 from db.InfluxDBConnection import InfluxDBConnectionHandler
@@ -38,6 +39,7 @@ port = 8086
 username = "geth"
 password = "geth"
 database = "ethonrpi"
+install_stage = -1
 timeout = 3  # Timeout in seconds
 retry_interval = 10  # Interval in seconds between retries
 fetch_interval = 30  # Interval in seconds between fetches
@@ -54,6 +56,8 @@ C_BG = '#00129A' #LCD bacground
 C_T1 = '#FFFFFF' #main text
 C_T2 = '#A1A1A1' #text on top
 C_T3 = '#A1A1A1' #text on bottom
+C_T_GREEN = '#22C55E' #green text
+C_T_RED = '#EF4433' #red text
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
@@ -105,6 +109,7 @@ def main():
     splash_time = 5
     time.sleep(splash_time - 1) # how long to show splash image (Web3Pi logo)
 
+    update_install_stage()
     low_frequency_tasks()
     high_frequency_tasks()
     medium_frequency_tasks()
@@ -112,107 +117,130 @@ def main():
     time.sleep(1)
 
     try:
+        
         # Get the current time (in seconds)
         next_time = time.time() + 1
         skip = 0
         logging.info('Entering forever loop')
         while True:
             try:
-                high_frequency_tasks() # every second
+                if install_stage != 100:
+                    status = update_install_stage()
+                    
+                    # Draw background
+                    image1 = Image.open('./img/lcdbg.png')
+                    draw = ImageDraw.Draw(image1)
 
-                if skip % 10 == 0:
-                    medium_frequency_tasks()
+                    if install_stage == 0:
+                        draw.text((10, 40), f'Stage 0:', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 2*40), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+                    elif install_stage == 1:
+                        draw.text((10, 40), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        draw.text((10, 2*40), f'Stage 1:', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 3**40), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+                    elif install_stage == 2:
+                        draw.text((10, 40), f'Stage 1: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        draw.text((10, 2*40), f'Stage 1: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        draw.text((10, 3*40), f'Stage 2:', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 4*40), f'{status}', fill=C_T1, font=Font3, anchor="mm")
 
-                if skip % 30 == 0:
-                    low_frequency_tasks()
+                    disp.ShowImage(image1)
 
-
-                # Draw background
-                image1 = Image.open('./img/lcdbg.png')
-                draw = ImageDraw.Draw(image1)
-
-                # Draw vertical lines
-                draw.line([(240 / 3, 0), (240 / 3, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
-                draw.line([((240 / 3) * 2, 0), ((240 / 3) * 2, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
-
-                # Draw vertical lines
-                draw.line([(0, 280 / 3), (240, 280 / 3)], fill="BLACK", width=2, joint=None)
-                draw.line([(0, (280 / 3) * 2), (240, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
-
-                # CPU
-                x = 0
-                y = 0
-                draw.text((120 + x, 108 + y), 'CPU', fill=C_T2, font=Font2, anchor="mm")
-
-                if SHOW_PER_CORE:
-                    draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage_400(int(cpu_percent))}', font=Font1, anchor="mm")
-                    draw.text((150 + x, 108 + y), '%', fill=C_T2, font=Font3, anchor="mm")
                 else:
-                    draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage(int(cpu_percent))}', font=Font1, anchor="mm")
-                    draw.text((150 + x, 145 + y), '%', fill=C_T2, font=Font3, anchor="mm")
-                ct = int(cpu_temp)
-                draw.text((122 + x, 170 + y), f'{ct}°C', fill=C_T2, font=Font2, anchor="mm")
+                    high_frequency_tasks() # every second
+
+                    if skip % 10 == 0:
+                        medium_frequency_tasks()
+
+                    if skip % 30 == 0:
+                        low_frequency_tasks()
 
 
-                # DISK
-                x = -80
-                y = 0
-                draw.text((120 + x, 108 + y), 'DISK', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{int(disk.percent)}%', fill=C_T1, font=Font1, anchor="mm")
-                draw.text((122 + x, 170 + y), f'{disk_free_tb:.2f}TB', fill=C_T2, font=Font3, anchor="mm")
+                    # Draw background
+                    image1 = Image.open('./img/lcdbg.png')
+                    draw = ImageDraw.Draw(image1)
 
-                # # CPU TEMP
-                # x = 0
-                # y = -90
-                # draw.text((120 + x, 108 + y), 'TEMP', fill=C_T2, font=Font2, anchor="mm")
-                # ct = int(cpu_temp)
-                # draw.text((120 + x, 140 + y), f'{ct}', fill=C_T1, font=Font1, anchor="mm")
-                # draw.text((145 + x, 170 + y), '°C', fill=C_T2, font=Font2, anchor="mm")
+                    # Draw vertical lines
+                    draw.line([(240 / 3, 0), (240 / 3, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
+                    draw.line([((240 / 3) * 2, 0), ((240 / 3) * 2, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
 
-                # EXEC
-                x = -80
-                y = -90
-                draw.text((120 + x, 108 + y), 'EXEC', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{map_status(exec)}', fill=map_status_color(exec), font=Font4, anchor="mm")
+                    # Draw vertical lines
+                    draw.line([(0, 280 / 3), (240, 280 / 3)], fill="BLACK", width=2, joint=None)
+                    draw.line([(0, (280 / 3) * 2), (240, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
 
-                # NODE
-                x = 0
-                y = -90
-                draw.text((120 + x, 108 + y), 'NODE', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{map_status(node)}', fill=map_status_color(node), font=Font4, anchor="mm")
+                    # CPU
+                    x = 0
+                    y = 0
+                    draw.text((120 + x, 108 + y), 'CPU', fill=C_T2, font=Font2, anchor="mm")
 
-                # CONS
-                x = 80
-                y = -90
-                draw.text((120 + x, 108 + y), 'CONS', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{map_status(cons)}', fill=map_status_color(cons), font=Font4, anchor="mm")
-
-                # RAM
-                x = 80
-                y = 0
-                draw.text((120 + x, 108 + y), 'RAM', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{int(mem.percent)}', fill=C_T1, font=Font1, anchor="mm")
-                draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
-
-                # SWAP
-                # x = 80
-                # y = 0
-                # draw.text((120 + x, 108 + y), 'SWAP', fill=C_T2, font=Font2, anchor="mm")
-                # draw.text((120 + x, 140 + y), f'{int(swap.percent)}', fill=C_T1, font=Font1, anchor="mm")
-                # draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
-
-                # Local IP / HostName
-                x = 40
-                y = 95
-                draw.text((120, 108 + y), 'IP / HOSTNAME', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120, 170 + y - 35), f'{ip_local_address}', fill=C_T1, font=Font3, anchor="mm")
-                draw.text((120, 170 + y - 10), f'{hostname}.local', fill=C_T1, font=Font3, anchor="mm")
-
-                # Send image to lcd display
-                disp.ShowImage(image1)
+                    if SHOW_PER_CORE:
+                        draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage_400(int(cpu_percent))}', font=Font1, anchor="mm")
+                        draw.text((150 + x, 108 + y), '%', fill=C_T2, font=Font3, anchor="mm")
+                    else:
+                        draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage(int(cpu_percent))}', font=Font1, anchor="mm")
+                        draw.text((150 + x, 145 + y), '%', fill=C_T2, font=Font3, anchor="mm")
+                    ct = int(cpu_temp)
+                    draw.text((122 + x, 170 + y), f'{ct}°C', fill=C_T2, font=Font2, anchor="mm")
 
 
-                skip += 1
+                    # DISK
+                    x = -80
+                    y = 0
+                    draw.text((120 + x, 108 + y), 'DISK', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120 + x, 140 + y), f'{int(disk.percent)}%', fill=C_T1, font=Font1, anchor="mm")
+                    draw.text((122 + x, 170 + y), f'{disk_free_tb:.2f}TB', fill=C_T2, font=Font3, anchor="mm")
+
+                    # # CPU TEMP
+                    # x = 0
+                    # y = -90
+                    # draw.text((120 + x, 108 + y), 'TEMP', fill=C_T2, font=Font2, anchor="mm")
+                    # ct = int(cpu_temp)
+                    # draw.text((120 + x, 140 + y), f'{ct}', fill=C_T1, font=Font1, anchor="mm")
+                    # draw.text((145 + x, 170 + y), '°C', fill=C_T2, font=Font2, anchor="mm")
+
+                    # EXEC
+                    x = -80
+                    y = -90
+                    draw.text((120 + x, 108 + y), 'EXEC', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120 + x, 140 + y), f'{map_status(exec)}', fill=map_status_color(exec), font=Font4, anchor="mm")
+
+                    # NODE
+                    x = 0
+                    y = -90
+                    draw.text((120 + x, 108 + y), 'NODE', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120 + x, 140 + y), f'{map_status(node)}', fill=map_status_color(node), font=Font4, anchor="mm")
+
+                    # CONS
+                    x = 80
+                    y = -90
+                    draw.text((120 + x, 108 + y), 'CONS', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120 + x, 140 + y), f'{map_status(cons)}', fill=map_status_color(cons), font=Font4, anchor="mm")
+
+                    # RAM
+                    x = 80
+                    y = 0
+                    draw.text((120 + x, 108 + y), 'RAM', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120 + x, 140 + y), f'{int(mem.percent)}', fill=C_T1, font=Font1, anchor="mm")
+                    draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
+
+                    # SWAP
+                    # x = 80
+                    # y = 0
+                    # draw.text((120 + x, 108 + y), 'SWAP', fill=C_T2, font=Font2, anchor="mm")
+                    # draw.text((120 + x, 140 + y), f'{int(swap.percent)}', fill=C_T1, font=Font1, anchor="mm")
+                    # draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
+
+                    # Local IP / HostName
+                    x = 40
+                    y = 95
+                    draw.text((120, 108 + y), 'IP / HOSTNAME', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120, 170 + y - 35), f'{ip_local_address}', fill=C_T1, font=Font3, anchor="mm")
+                    draw.text((120, 170 + y - 10), f'{hostname}.local', fill=C_T1, font=Font3, anchor="mm")
+
+                    # Send image to lcd display
+                    disp.ShowImage(image1)
+
+                    skip += 1
 
                 # Wait until the next call
                 time.sleep(max(0, next_time - time.time()))
@@ -293,6 +321,49 @@ def get_cpu_temperature():
 
     return cpu_temp
 
+def update_install_stage():
+    global install_stage
+    try:
+        with open("/opt/web3pi/status.jlog", "r") as f:
+            lines = f.readlines()
+
+            last_line = lines[-1].strip()
+            data = json.loads(last_line)
+
+            status = data.get("statusShort")
+            stage = int(data.get("stage"))
+            if stage != None:
+                install_stage = stage
+            else:
+                install_stage = 0
+
+            return status
+    except Exception as error:
+        logging.error("An exception occurred: " + type(error).__name__)
+
+# current_stage_index = 0
+# def update_install_stage():
+#     global install_stage, current_stage_index
+#     try:
+#         with open("stageShortList.txt", "r") as f:
+#             lines = [line.strip() for line in f if line.strip()]
+
+#             if current_stage_index >= len(lines):
+#                 logging.info("Wszystkie etapy zostały przetworzone.")
+#                 return None  # Lub np. "Finished"
+
+#             status = lines[current_stage_index]
+#             if current_stage_index < 40:
+#                 install_stage = 1
+#             else:
+#                 install_stage = 2
+#             current_stage_index += 1
+
+#             return status
+
+#     except Exception as error:
+#         logging.error("An exception occurred: " + type(error).__name__)
+#         return None
 
 def high_frequency_tasks():
     logging.debug("high_frequency_tasks()")
