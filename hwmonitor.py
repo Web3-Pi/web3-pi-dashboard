@@ -139,13 +139,13 @@ def main():
                         draw.text((10, 2*40), f'Stage 1:', fill=C_T2, font=Font2, anchor="lt")
                         draw.text((120, 3**40), f'{status}', fill=C_T1, font=Font3, anchor="mm")
                     elif install_stage == 2:
-                        draw.text((10, 40), f'Stage 1: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        draw.text((10, 40), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
                         draw.text((10, 2*40), f'Stage 1: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
                         draw.text((10, 3*40), f'Stage 2:', fill=C_T2, font=Font2, anchor="lt")
                         draw.text((120, 4*40), f'{status}', fill=C_T1, font=Font3, anchor="mm")
 
                     disp.ShowImage(image1)
-
+                    next_time -= 0.5
                 else:
                     high_frequency_tasks() # every second
 
