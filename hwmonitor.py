@@ -94,22 +94,14 @@ def main():
     Font3 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 20)
     Font4 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 15)
 
-    # Create start image for drawing.
-    image1 = Image.open('./img/Web3Pi_logo_0.png')
-    draw = ImageDraw.Draw(image1)
-
-    image1 = image1.rotate(0)
-    disp.ShowImage(image1)
-
     global influx_handler
     influx_handler = InfluxDBConnectionHandler(hostname, port, username, password, database, timeout, retry_interval,
                                                fetch_interval)
     influx_handler.start()
 
-    splash_time = 5
-    time.sleep(splash_time - 1) # how long to show splash image (Web3Pi logo)
-
     update_install_stage()
+    show_opening(disp)
+
     low_frequency_tasks()
     high_frequency_tasks()
     medium_frequency_tasks()
@@ -127,23 +119,25 @@ def main():
                 if install_stage != 100:
                     status = update_install_stage()
                     
-                    # Draw background
-                    image1 = Image.open('./img/lcdbg.png')
+                    image1 = Image.open('./img/lcdbg.png').convert("RGBA")
                     draw = ImageDraw.Draw(image1)
-
+                    logo = Image.open('./img/web3-pi-logo-240x70.png')
+                    image1.paste(logo, (0, 10), logo)
+                    
                     if install_stage == 0:
-                        draw.text((10, 40), f'Stage 0:', fill=C_T2, font=Font2, anchor="lt")
-                        draw.text((120, 2*40), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+                        draw.text((10, 100), f'Stage 0:', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 2*40+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
                     elif install_stage == 1:
-                        draw.text((10, 40), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
-                        draw.text((10, 2*40), f'Stage 1:', fill=C_T2, font=Font2, anchor="lt")
-                        draw.text((120, 3**40), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+                        draw.text((10, 100), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        draw.text((10, 2*40+60), f'Stage 1:', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 3*40+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
                     elif install_stage == 2:
-                        draw.text((10, 40), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
-                        draw.text((10, 2*40), f'Stage 1: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
-                        draw.text((10, 3*40), f'Stage 2:', fill=C_T2, font=Font2, anchor="lt")
-                        draw.text((120, 4*40), f'{status}', fill=C_T1, font=Font3, anchor="mm")
-
+                        draw.text((10, 100), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        draw.text((10, 2*40+60), f'Stage 1: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        draw.text((10, 3*40+60), f'Stage 2:', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 4*40+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+                    
+                    draw.text((120, 5*40+60), f'{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}', fill=C_T1, font=Font3, anchor="mm")
                     disp.ShowImage(image1)
                     next_time -= 0.5
                 else:
@@ -335,35 +329,25 @@ def update_install_stage():
             if stage != None:
                 install_stage = stage
             else:
-                install_stage = 0
+                install_stage = -1
 
             return status
     except Exception as error:
+        install_stage = -1
         logging.error("An exception occurred: " + type(error).__name__)
 
-# current_stage_index = 0
-# def update_install_stage():
-#     global install_stage, current_stage_index
-#     try:
-#         with open("stageShortList.txt", "r") as f:
-#             lines = [line.strip() for line in f if line.strip()]
+def show_opening(disp):
+    global install_stage
+    # Don't play opening during installation 
+    if install_stage == -1 or install_stage == 100:
+        image1 = Image.open('./img/Web3Pi_logo_0.png') # Create start image for drawing.
+        draw = ImageDraw.Draw(image1)
 
-#             if current_stage_index >= len(lines):
-#                 logging.info("Wszystkie etapy zostały przetworzone.")
-#                 return None  # Lub np. "Finished"
+        image1 = image1.rotate(0)
+        disp.ShowImage(image1)
 
-#             status = lines[current_stage_index]
-#             if current_stage_index < 40:
-#                 install_stage = 1
-#             else:
-#                 install_stage = 2
-#             current_stage_index += 1
-
-#             return status
-
-#     except Exception as error:
-#         logging.error("An exception occurred: " + type(error).__name__)
-#         return None
+        splash_time = 3
+        time.sleep(splash_time) # how long to show splash image (Web3Pi logo)
 
 def high_frequency_tasks():
     logging.debug("high_frequency_tasks()")
