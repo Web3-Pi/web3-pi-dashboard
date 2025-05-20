@@ -64,6 +64,9 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
 
+# For registering errors during installation
+error_occured = {"0": False, "1": False, "2": False, "100": False, "any": False}
+
 def main():
     logging.info('Hardware Monitor Start')
     # chceck sensors avability
@@ -92,6 +95,7 @@ def main():
     Font1 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 35)
     Font2 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 25)
     Font3 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 20)
+    Font3_5 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 18)
     Font4 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 15)
 
     global influx_handler
@@ -99,8 +103,9 @@ def main():
                                                fetch_interval)
     influx_handler.start()
 
-    update_install_stage()
-    show_opening(disp)
+    check_errors_from_log()
+    update_install_stage(disp=disp)
+    show_opening(disp=disp)
 
     low_frequency_tasks()
     high_frequency_tasks()
@@ -108,6 +113,8 @@ def main():
 
     time.sleep(1)
 
+    spinner = "   "
+    error_msg_color = 0
     try:
         
         # Get the current time (in seconds)
@@ -117,29 +124,63 @@ def main():
         while True:
             try:
                 if install_stage != 100:
-                    status = update_install_stage()
+                    status = update_install_stage(disp=disp)
+                    spinner = update_spinner(spinner)
                     
                     image1 = Image.open('./img/lcdbg.png').convert("RGBA")
                     draw = ImageDraw.Draw(image1)
                     logo = Image.open('./img/web3-pi-logo-240x70.png')
-                    image1.paste(logo, (0, 10), logo)
+                    image1.paste(logo, (0, 25), logo)
                     
                     if install_stage == 0:
-                        draw.text((10, 100), f'Stage 0:', fill=C_T2, font=Font2, anchor="lt")
-                        draw.text((120, 2*40+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+                        if error_occured["0"]:
+                            draw.text((10, 35+60), f'Stage 0: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 35+60), f'Stage 0: {spinner} ', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 2*35+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+
                     elif install_stage == 1:
-                        draw.text((10, 100), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
-                        draw.text((10, 2*40+60), f'Stage 1:', fill=C_T2, font=Font2, anchor="lt")
-                        draw.text((120, 3*40+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+                        if error_occured["0"]:
+                            draw.text((10, 35+60), f'Stage 0: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 35+60), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        if error_occured["1"]:
+                            draw.text((10, 2*35+60), f'Stage 1: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 2*35+60), f'Stage 1: {spinner} ', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 3*35+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+
                     elif install_stage == 2:
-                        draw.text((10, 100), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
-                        draw.text((10, 2*40+60), f'Stage 1: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
-                        draw.text((10, 3*40+60), f'Stage 2:', fill=C_T2, font=Font2, anchor="lt")
-                        draw.text((120, 4*40+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+                        if error_occured["0"]:
+                            draw.text((10, 35+60), f'Stage 0: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 35+60), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        if error_occured["1"]:
+                            draw.text((10, 2*35+60), f'Stage 1: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 2*35+60), f'Stage 1: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        if error_occured["2"]:
+                            draw.text((10, 3*35+60), f'Stage 2: ERROR', fill=C_T2, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 3*35+60), f'Stage 2: {spinner} ', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 4*35+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
+
+                    if error_occured["any"]:
+                        if error_msg_color == 0:
+                            draw.text((120, 5*35+60), f'For more info visit:', fill=C_T_RED, font=Font3_5, anchor="mm")
+                            error_msg_color = 1
+                        else:
+                            draw.text((120, 5*35+60), f'For more info visit:', fill=C_T1, font=Font3_5, anchor="mm")
+                            error_msg_color = 0
+                    else:
+                            draw.text((120, 5*35+60), f'For more info visit:', fill=C_T1, font=Font3_5, anchor="mm")
+
+                    draw.text((120, 10), f'{time.strftime('%d.%m.%y %H:%M:%S', time.localtime())}', fill=C_T2, font=Font3_5, anchor="mm")
+                    draw.text((120, 5*35+80), f'http://{ip_local_address}', fill=C_T1, font=Font3_5, anchor="mm")
                     
-                    draw.text((120, 5*40+60), f'{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}', fill=C_T1, font=Font3, anchor="mm")
                     disp.ShowImage(image1)
                     next_time -= 0.5
+
                 else:
                     high_frequency_tasks() # every second
 
@@ -315,39 +356,107 @@ def get_cpu_temperature():
 
     return cpu_temp
 
-def update_install_stage():
+def update_install_stage(disp=None):
     global install_stage
     try:
-        with open("/opt/web3pi/status.jlog", "r") as f:
-            lines = f.readlines()
+        lines = read_last_n_lines("/opt/web3pi/status.jlog", n=2)
+        if len(lines) != 0:
+            if len(lines) >= 1:
+                line = lines[0]
+                data = json.loads(line)
+                status = data.get("statusShort")
+                stage = int(data.get("stage"))
 
-            last_line = lines[-1].strip()
-            data = json.loads(last_line)
+                if stage != None:
+                    install_stage = stage
+                else:
+                    install_stage = -1
 
-            status = data.get("statusShort")
-            stage = int(data.get("stage"))
-            if stage != None:
-                install_stage = stage
-            else:
-                install_stage = -1
+                if data.get("level") == "ERROR":
+                    stage = str(data.get("stage"))
+                    if stage in error_occured:
+                        error_occured[stage] = True
+                        error_occured["any"] = True
+            if len(lines) == 2:
+                prev_line = lines[1]
+                prev_data = json.loads(prev_line)
+                prev_stage = int(prev_data.get("stage"))
 
-            return status
+                if prev_stage == 2 and stage == 100:
+                    show_animation_sequence(disp=disp)
+
+            return status   
     except Exception as error:
         install_stage = -1
         logging.error("An exception occurred: " + type(error).__name__)
 
-def show_opening(disp):
-    global install_stage
-    # Don't play opening during installation 
-    if install_stage == -1 or install_stage == 100:
-        image1 = Image.open('./img/Web3Pi_logo_0.png') # Create start image for drawing.
-        draw = ImageDraw.Draw(image1)
+def read_last_n_lines(filepath, n=2):
+    with open(filepath, 'rb') as f:
+        f.seek(0, 2)
+        pos = f.tell()
+        lines = []
+        current_line = b''
 
-        image1 = image1.rotate(0)
-        disp.ShowImage(image1)
+        while pos > 0 and len(lines) < n:
+            pos -= 1
+            f.seek(pos)
+            char = f.read(1)
+            if char == b'\n':
+                if current_line:
+                    lines.append(current_line.decode('utf-8').strip())
+                    current_line = b''
+            else:
+                current_line = char + current_line
 
-        splash_time = 3
-        time.sleep(splash_time) # how long to show splash image (Web3Pi logo)
+        if current_line:
+            lines.append(current_line.decode('utf-8').strip())
+
+        return lines[-n:]
+
+def show_opening(disp=None):
+    if os.path.exists("/root/opening.flag"):
+        show_animation_sequence(disp=disp)
+    else:
+        open("/root/opening.flag", "w").close()
+
+def show_animation_sequence(folder_path="./img/3D/", frame_count=240, fps=30, disp=None):
+    delay = 1.0 / fps
+
+    image_files = sorted([
+        f for f in os.listdir(folder_path)
+        if f.lower().endswith('.png')
+    ])
+
+    for filename in image_files:
+        image_path = os.path.join(folder_path, filename)
+        image = Image.open(image_path)
+        if disp:
+            disp.ShowImage(image)
+        time.sleep(delay)
+    time.sleep(1)
+
+def update_spinner(spinner):
+    next_dot_count = (spinner.count('.') + 1) % 4
+    return '.' * next_dot_count + ' ' * (3 - next_dot_count)
+
+def check_errors_from_log():
+    global error_occured
+
+    try:
+        with open("/opt/web3pi/status.jlog", "r") as f:
+            for line in f:
+                try:
+                    data = json.loads(line.strip())
+                    if data.get("level") == "ERROR":
+                        stage = str(data.get("stage"))
+                        if stage in error_occured:
+                            error_occured[stage] = True
+                            error_occured["any"] = True
+                except json.JSONDecodeError:
+                    continue
+
+    except Exception as error:
+        logging.error("An exception occurred: " + type(error).__name__)
 
 def high_frequency_tasks():
     logging.debug("high_frequency_tasks()")
