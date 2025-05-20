@@ -165,18 +165,19 @@ def main():
                             draw.text((10, 3*35+60), f'Stage 2: {spinner} ', fill=C_T2, font=Font2, anchor="lt")
                         draw.text((120, 4*35+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
 
-                    if error_occured["any"]:
-                        if error_msg_color == 0:
-                            draw.text((120, 5*35+60), f'For more info visit:', fill=C_T_RED, font=Font3_5, anchor="mm")
-                            error_msg_color = 1
+                    if ip_local_address != None:
+                        if error_occured["any"]:
+                            if error_msg_color == 0:
+                                draw.text((120, 5*35+60), f'For more info visit:', fill=C_T_RED, font=Font3_5, anchor="mm")
+                                error_msg_color = 1
+                            else:
+                                draw.text((120, 5*35+60), f'For more info visit:', fill=C_T1, font=Font3_5, anchor="mm")
+                                error_msg_color = 0
                         else:
-                            draw.text((120, 5*35+60), f'For more info visit:', fill=C_T1, font=Font3_5, anchor="mm")
-                            error_msg_color = 0
-                    else:
-                            draw.text((120, 5*35+60), f'For more info visit:', fill=C_T1, font=Font3_5, anchor="mm")
+                                draw.text((120, 5*35+60), f'For more info visit:', fill=C_T1, font=Font3_5, anchor="mm")
 
-                    draw.text((120, 10), f'{time.strftime('%d.%m.%y %H:%M:%S', time.localtime())}', fill=C_T2, font=Font3_5, anchor="mm")
-                    draw.text((120, 5*35+80), f'http://{ip_local_address}', fill=C_T1, font=Font3_5, anchor="mm")
+                        draw.text((120, 10), f'{time.strftime('%d.%m.%y %H:%M:%S', time.localtime())}', fill=C_T2, font=Font3_5, anchor="mm")
+                        draw.text((120, 5*35+80), f'http://{ip_local_address}', fill=C_T1, font=Font3_5, anchor="mm")
                     
                     disp.ShowImage(image1)
                     next_time -= 0.5
