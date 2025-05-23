@@ -360,7 +360,7 @@ def get_cpu_temperature():
 def update_install_stage(disp=None):
     global install_stage
     try:
-        lines = read_last_n_lines("/opt/web3pi/status.jlog", n=2)
+        lines = read_last_n_lines("/opt/web3pi/status.jlog", n=1)
         if len(lines) != 0:
             if len(lines) >= 1:
                 line = lines[0]
@@ -369,6 +369,8 @@ def update_install_stage(disp=None):
                 stage = int(data.get("stage"))
 
                 if stage != None:
+                    if install_stage == 2 and stage == 100:
+                        show_animation_sequence(disp=disp)
                     install_stage = stage
                 else:
                     install_stage = -1
@@ -378,13 +380,6 @@ def update_install_stage(disp=None):
                     if stage in error_occured:
                         error_occured[stage] = True
                         error_occured["any"] = True
-            if len(lines) == 2:
-                prev_line = lines[1]
-                prev_data = json.loads(prev_line)
-                prev_stage = int(prev_data.get("stage"))
-
-                if prev_stage == 2 and stage == 100:
-                    show_animation_sequence(disp=disp)
 
             return status   
     except Exception as error:
