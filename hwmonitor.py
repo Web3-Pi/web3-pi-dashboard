@@ -65,7 +65,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S')
 
 # For registering errors during installation
-error_occured = {"0": False, "1": False, "2": False, "100": False, "any": False}
+error_in_stage = {"0": False, "1": False, "2": False, "100": False, "any": False}
 
 def main():
     logging.info('Hardware Monitor Start')
@@ -103,7 +103,6 @@ def main():
                                                fetch_interval)
     influx_handler.start()
 
-    check_errors_from_log()
     update_install_stage(disp=disp)
     show_opening(disp=disp)
 
@@ -133,40 +132,40 @@ def main():
                     image1.paste(logo, (0, 25), logo)
                     
                     if install_stage == 0:
-                        if error_occured["0"]:
+                        if error_in_stage["0"]:
                             draw.text((10, 35+60), f'Stage 0: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
                         else:
                             draw.text((10, 35+60), f'Stage 0: {spinner} ', fill=C_T2, font=Font2, anchor="lt")
                         draw.text((120, 2*35+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
 
                     elif install_stage == 1:
-                        if error_occured["0"]:
+                        if error_in_stage["0"]:
                             draw.text((10, 35+60), f'Stage 0: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
                         else:
                             draw.text((10, 35+60), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
-                        if error_occured["1"]:
+                        if error_in_stage["1"]:
                             draw.text((10, 2*35+60), f'Stage 1: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
                         else:
                             draw.text((10, 2*35+60), f'Stage 1: {spinner} ', fill=C_T2, font=Font2, anchor="lt")
                         draw.text((120, 3*35+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
 
                     elif install_stage == 2:
-                        if error_occured["0"]:
+                        if error_in_stage["0"]:
                             draw.text((10, 35+60), f'Stage 0: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
                         else:
                             draw.text((10, 35+60), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
-                        if error_occured["1"]:
+                        if error_in_stage["1"]:
                             draw.text((10, 2*35+60), f'Stage 1: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
                         else:
                             draw.text((10, 2*35+60), f'Stage 1: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
-                        if error_occured["2"]:
-                            draw.text((10, 3*35+60), f'Stage 2: ERROR', fill=C_T2, font=Font2, anchor="lt")
+                        if error_in_stage["2"]:
+                            draw.text((10, 3*35+60), f'Stage 2: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
                         else:
                             draw.text((10, 3*35+60), f'Stage 2: {spinner} ', fill=C_T2, font=Font2, anchor="lt")
                         draw.text((120, 4*35+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
 
                     if ip_local_address != None:
-                        if error_occured["any"]:
+                        if error_in_stage["any"]:
                             if error_msg_color == 0:
                                 draw.text((120, 5*35+60), f'For more info visit:', fill=C_T_RED, font=Font3_5, anchor="mm")
                                 error_msg_color = 1
@@ -377,10 +376,14 @@ def update_install_stage(disp=None):
 
                 if data.get("level") == "ERROR":
                     stage = str(data.get("stage"))
-                    if stage in error_occured:
-                        error_occured[stage] = True
-                        error_occured["any"] = True
+                    if stage in error_in_stage:
+                        error_in_stage[f'{stage}'] = True
+                        error_in_stage["any"] = True
 
+                if data.get("level") == "INFO":
+                    for s in ["0", "1", "2", "any"]:
+                        error_in_stage[s] = False
+            
             return status   
     except Exception as error:
         install_stage = -1
@@ -434,25 +437,6 @@ def show_animation_sequence(folder_path="./img/3D/", frame_count=240, fps=30, di
 def update_spinner(spinner):
     next_dot_count = (spinner.count('.') + 1) % 4
     return '.' * next_dot_count + ' ' * (3 - next_dot_count)
-
-def check_errors_from_log():
-    global error_occured
-
-    try:
-        with open("/opt/web3pi/status.jlog", "r") as f:
-            for line in f:
-                try:
-                    data = json.loads(line.strip())
-                    if data.get("level") == "ERROR":
-                        stage = str(data.get("stage"))
-                        if stage in error_occured:
-                            error_occured[stage] = True
-                            error_occured["any"] = True
-                except json.JSONDecodeError:
-                    continue
-
-    except Exception as error:
-        logging.error("An exception occurred: " + type(error).__name__)
 
 def high_frequency_tasks():
     logging.debug("high_frequency_tasks()")
