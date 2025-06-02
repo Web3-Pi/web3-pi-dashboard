@@ -23,6 +23,7 @@ import psutil
 import socket
 import netifaces
 import logging
+import json
 from lcd import LCD_1inch69
 from PIL import Image, ImageDraw, ImageFont
 from db.InfluxDBConnection import InfluxDBConnectionHandler
@@ -38,6 +39,7 @@ port = 8086
 username = "geth"
 password = "geth"
 database = "ethonrpi"
+install_stage = -1
 timeout = 3  # Timeout in seconds
 retry_interval = 10  # Interval in seconds between retries
 fetch_interval = 30  # Interval in seconds between fetches
@@ -54,11 +56,16 @@ C_BG = '#00129A' #LCD bacground
 C_T1 = '#FFFFFF' #main text
 C_T2 = '#A1A1A1' #text on top
 C_T3 = '#A1A1A1' #text on bottom
+C_T_GREEN = '#22C55E' #green text
+C_T_RED = '#EF4433' #red text
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
+
+# For registering errors during installation
+error_in_stage = {"0": False, "1": False, "2": False, "100": False, "any": False}
 
 def main():
     logging.info('Hardware Monitor Start')
@@ -88,22 +95,16 @@ def main():
     Font1 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 35)
     Font2 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 25)
     Font3 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 20)
+    Font3_5 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 18)
     Font4 = ImageFont.truetype("./font/JetBrainsMono-Medium.ttf", 15)
-
-    # Create start image for drawing.
-    image1 = Image.open('./img/Web3Pi_logo_0.png')
-    draw = ImageDraw.Draw(image1)
-
-    image1 = image1.rotate(0)
-    disp.ShowImage(image1)
 
     global influx_handler
     influx_handler = InfluxDBConnectionHandler(hostname, port, username, password, database, timeout, retry_interval,
                                                fetch_interval)
     influx_handler.start()
 
-    splash_time = 5
-    time.sleep(splash_time - 1) # how long to show splash image (Web3Pi logo)
+    update_install_stage(disp=disp)
+    show_opening(disp=disp)
 
     low_frequency_tasks()
     high_frequency_tasks()
@@ -111,108 +112,170 @@ def main():
 
     time.sleep(1)
 
+    spinner = "   "
+    error_msg_color = 0
     try:
+        
         # Get the current time (in seconds)
         next_time = time.time() + 1
         skip = 0
         logging.info('Entering forever loop')
         while True:
             try:
-                high_frequency_tasks() # every second
+                if install_stage != 100:
+                    status = update_install_stage(disp=disp)
+                    spinner = update_spinner(spinner)
+                    
+                    image1 = Image.open('./img/lcdbg.png').convert("RGBA")
+                    draw = ImageDraw.Draw(image1)
+                    logo = Image.open('./img/web3-pi-logo-240x70.png')
+                    image1.paste(logo, (0, 25), logo)
+                    
+                    if install_stage == 0:
+                        if error_in_stage["0"]:
+                            draw.text((10, 35+60), f'Stage 0: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 35+60), f'Stage 0: {spinner} ', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 2*35+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
 
-                if skip % 10 == 0:
-                    medium_frequency_tasks()
+                    elif install_stage == 1:
+                        if error_in_stage["0"]:
+                            draw.text((10, 35+60), f'Stage 0: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 35+60), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        if error_in_stage["1"]:
+                            draw.text((10, 2*35+60), f'Stage 1: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 2*35+60), f'Stage 1: {spinner} ', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 3*35+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
 
-                if skip % 30 == 0:
-                    low_frequency_tasks()
+                    elif install_stage == 2:
+                        if error_in_stage["0"]:
+                            draw.text((10, 35+60), f'Stage 0: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 35+60), f'Stage 0: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        if error_in_stage["1"]:
+                            draw.text((10, 2*35+60), f'Stage 1: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 2*35+60), f'Stage 1: DONE', fill=C_T_GREEN, font=Font2, anchor="lt")
+                        if error_in_stage["2"]:
+                            draw.text((10, 3*35+60), f'Stage 2: ERROR', fill=C_T_RED, font=Font2, anchor="lt")
+                        else:
+                            draw.text((10, 3*35+60), f'Stage 2: {spinner} ', fill=C_T2, font=Font2, anchor="lt")
+                        draw.text((120, 4*35+65), f'{status}', fill=C_T1, font=Font3, anchor="mm")
 
+                    if ip_local_address != None:
+                        if error_in_stage["any"]:
+                            if error_msg_color == 0:
+                                draw.text((120, 5*35+60), f'For more info visit:', fill=C_T_RED, font=Font3_5, anchor="mm")
+                                error_msg_color = 1
+                            else:
+                                draw.text((120, 5*35+60), f'For more info visit:', fill=C_T1, font=Font3_5, anchor="mm")
+                                error_msg_color = 0
+                        else:
+                                draw.text((120, 5*35+60), f'For more info visit:', fill=C_T1, font=Font3_5, anchor="mm")
 
-                # Draw background
-                image1 = Image.open('./img/lcdbg.png')
-                draw = ImageDraw.Draw(image1)
+                        draw.text((120, 10), f'{time.strftime('%d.%m.%y %H:%M:%S', time.localtime())}', fill=C_T2, font=Font3_5, anchor="mm")
+                        draw.text((120, 5*35+80), f'http://{ip_local_address}', fill=C_T1, font=Font3_5, anchor="mm")
+                    
+                    disp.ShowImage(image1)
+                    next_time -= 0.5
 
-                # Draw vertical lines
-                draw.line([(240 / 3, 0), (240 / 3, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
-                draw.line([((240 / 3) * 2, 0), ((240 / 3) * 2, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
-
-                # Draw vertical lines
-                draw.line([(0, 280 / 3), (240, 280 / 3)], fill="BLACK", width=2, joint=None)
-                draw.line([(0, (280 / 3) * 2), (240, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
-
-                # CPU
-                x = 0
-                y = 0
-                draw.text((120 + x, 108 + y), 'CPU', fill=C_T2, font=Font2, anchor="mm")
-
-                if SHOW_PER_CORE:
-                    draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage_400(int(cpu_percent))}', font=Font1, anchor="mm")
-                    draw.text((150 + x, 108 + y), '%', fill=C_T2, font=Font3, anchor="mm")
                 else:
-                    draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage(int(cpu_percent))}', font=Font1, anchor="mm")
-                    draw.text((150 + x, 145 + y), '%', fill=C_T2, font=Font3, anchor="mm")
-                ct = int(cpu_temp)
-                draw.text((122 + x, 170 + y), f'{ct}°C', fill=C_T2, font=Font2, anchor="mm")
+                    high_frequency_tasks() # every second
+
+                    if skip % 10 == 0:
+                        medium_frequency_tasks()
+
+                    if skip % 30 == 0:
+                        low_frequency_tasks()
 
 
-                # DISK
-                x = -80
-                y = 0
-                draw.text((120 + x, 108 + y), 'DISK', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{int(disk.percent)}%', fill=C_T1, font=Font1, anchor="mm")
-                draw.text((122 + x, 170 + y), f'{disk_free_tb:.2f}TB', fill=C_T2, font=Font3, anchor="mm")
+                    # Draw background
+                    image1 = Image.open('./img/lcdbg.png')
+                    draw = ImageDraw.Draw(image1)
 
-                # # CPU TEMP
-                # x = 0
-                # y = -90
-                # draw.text((120 + x, 108 + y), 'TEMP', fill=C_T2, font=Font2, anchor="mm")
-                # ct = int(cpu_temp)
-                # draw.text((120 + x, 140 + y), f'{ct}', fill=C_T1, font=Font1, anchor="mm")
-                # draw.text((145 + x, 170 + y), '°C', fill=C_T2, font=Font2, anchor="mm")
+                    # Draw vertical lines
+                    draw.line([(240 / 3, 0), (240 / 3, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
+                    draw.line([((240 / 3) * 2, 0), ((240 / 3) * 2, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
 
-                # EXEC
-                x = -80
-                y = -90
-                draw.text((120 + x, 108 + y), 'EXEC', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{map_status(exec)}', fill=map_status_color(exec), font=Font4, anchor="mm")
+                    # Draw vertical lines
+                    draw.line([(0, 280 / 3), (240, 280 / 3)], fill="BLACK", width=2, joint=None)
+                    draw.line([(0, (280 / 3) * 2), (240, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
 
-                # NODE
-                x = 0
-                y = -90
-                draw.text((120 + x, 108 + y), 'NODE', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{map_status(node)}', fill=map_status_color(node), font=Font4, anchor="mm")
+                    # CPU
+                    x = 0
+                    y = 0
+                    draw.text((120 + x, 108 + y), 'CPU', fill=C_T2, font=Font2, anchor="mm")
 
-                # CONS
-                x = 80
-                y = -90
-                draw.text((120 + x, 108 + y), 'CONS', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{map_status(cons)}', fill=map_status_color(cons), font=Font4, anchor="mm")
-
-                # RAM
-                x = 80
-                y = 0
-                draw.text((120 + x, 108 + y), 'RAM', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120 + x, 140 + y), f'{int(mem.percent)}', fill=C_T1, font=Font1, anchor="mm")
-                draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
-
-                # SWAP
-                # x = 80
-                # y = 0
-                # draw.text((120 + x, 108 + y), 'SWAP', fill=C_T2, font=Font2, anchor="mm")
-                # draw.text((120 + x, 140 + y), f'{int(swap.percent)}', fill=C_T1, font=Font1, anchor="mm")
-                # draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
-
-                # Local IP / HostName
-                x = 40
-                y = 95
-                draw.text((120, 108 + y), 'IP / HOSTNAME', fill=C_T2, font=Font2, anchor="mm")
-                draw.text((120, 170 + y - 35), f'{ip_local_address}', fill=C_T1, font=Font3, anchor="mm")
-                draw.text((120, 170 + y - 10), f'{hostname}.local', fill=C_T1, font=Font3, anchor="mm")
-
-                # Send image to lcd display
-                disp.ShowImage(image1)
+                    if SHOW_PER_CORE:
+                        draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage_400(int(cpu_percent))}', font=Font1, anchor="mm")
+                        draw.text((150 + x, 108 + y), '%', fill=C_T2, font=Font3, anchor="mm")
+                    else:
+                        draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage(int(cpu_percent))}', font=Font1, anchor="mm")
+                        draw.text((150 + x, 145 + y), '%', fill=C_T2, font=Font3, anchor="mm")
+                    ct = int(cpu_temp)
+                    draw.text((122 + x, 170 + y), f'{ct}°C', fill=C_T2, font=Font2, anchor="mm")
 
 
-                skip += 1
+                    # DISK
+                    x = -80
+                    y = 0
+                    draw.text((120 + x, 108 + y), 'DISK', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120 + x, 140 + y), f'{int(disk.percent)}%', fill=C_T1, font=Font1, anchor="mm")
+                    draw.text((122 + x, 170 + y), f'{disk_free_tb:.2f}TB', fill=C_T2, font=Font3, anchor="mm")
+
+                    # # CPU TEMP
+                    # x = 0
+                    # y = -90
+                    # draw.text((120 + x, 108 + y), 'TEMP', fill=C_T2, font=Font2, anchor="mm")
+                    # ct = int(cpu_temp)
+                    # draw.text((120 + x, 140 + y), f'{ct}', fill=C_T1, font=Font1, anchor="mm")
+                    # draw.text((145 + x, 170 + y), '°C', fill=C_T2, font=Font2, anchor="mm")
+
+                    # EXEC
+                    x = -80
+                    y = -90
+                    draw.text((120 + x, 108 + y), 'EXEC', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120 + x, 140 + y), f'{map_status(exec)}', fill=map_status_color(exec), font=Font4, anchor="mm")
+
+                    # NODE
+                    x = 0
+                    y = -90
+                    draw.text((120 + x, 108 + y), 'NODE', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120 + x, 140 + y), f'{map_status(node)}', fill=map_status_color(node), font=Font4, anchor="mm")
+
+                    # CONS
+                    x = 80
+                    y = -90
+                    draw.text((120 + x, 108 + y), 'CONS', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120 + x, 140 + y), f'{map_status(cons)}', fill=map_status_color(cons), font=Font4, anchor="mm")
+
+                    # RAM
+                    x = 80
+                    y = 0
+                    draw.text((120 + x, 108 + y), 'RAM', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120 + x, 140 + y), f'{int(mem.percent)}', fill=C_T1, font=Font1, anchor="mm")
+                    draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
+
+                    # SWAP
+                    # x = 80
+                    # y = 0
+                    # draw.text((120 + x, 108 + y), 'SWAP', fill=C_T2, font=Font2, anchor="mm")
+                    # draw.text((120 + x, 140 + y), f'{int(swap.percent)}', fill=C_T1, font=Font1, anchor="mm")
+                    # draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
+
+                    # Local IP / HostName
+                    x = 40
+                    y = 95
+                    draw.text((120, 108 + y), 'IP / HOSTNAME', fill=C_T2, font=Font2, anchor="mm")
+                    draw.text((120, 170 + y - 35), f'{ip_local_address}', fill=C_T1, font=Font3, anchor="mm")
+                    draw.text((120, 170 + y - 10), f'{hostname}.local', fill=C_T1, font=Font3, anchor="mm")
+
+                    # Send image to lcd display
+                    disp.ShowImage(image1)
+
+                    skip += 1
 
                 # Wait until the next call
                 time.sleep(max(0, next_time - time.time()))
@@ -293,6 +356,87 @@ def get_cpu_temperature():
 
     return cpu_temp
 
+def update_install_stage(disp=None):
+    global install_stage
+    try:
+        lines = read_last_n_lines("/opt/web3pi/status.jlog", n=1)
+        if len(lines) != 0:
+            if len(lines) >= 1:
+                line = lines[0]
+                data = json.loads(line)
+                status = data.get("statusShort")
+                stage = int(data.get("stage"))
+
+                if stage != None:
+                    if install_stage == 2 and stage == 100:
+                        show_animation_sequence(disp=disp)
+                    install_stage = stage
+                else:
+                    install_stage = -1
+
+                if data.get("level") == "ERROR":
+                    stage = str(data.get("stage"))
+                    if stage in error_in_stage:
+                        error_in_stage[f'{stage}'] = True
+                        error_in_stage["any"] = True
+
+                if data.get("level") == "INFO":
+                    for s in ["0", "1", "2", "any"]:
+                        error_in_stage[s] = False
+            
+            return status   
+    except Exception as error:
+        install_stage = -1
+        logging.error("An exception occurred: " + type(error).__name__)
+
+def read_last_n_lines(filepath, n=2):
+    with open(filepath, 'rb') as f:
+        f.seek(0, 2)
+        pos = f.tell()
+        lines = []
+        current_line = b''
+
+        while pos > 0 and len(lines) < n:
+            pos -= 1
+            f.seek(pos)
+            char = f.read(1)
+            if char == b'\n':
+                if current_line:
+                    lines.append(current_line.decode('utf-8').strip())
+                    current_line = b''
+            else:
+                current_line = char + current_line
+
+        if current_line:
+            lines.append(current_line.decode('utf-8').strip())
+
+        return lines[-n:]
+
+def show_opening(disp=None):
+    if os.path.exists("/root/opening.flag"):
+        show_animation_sequence(disp=disp)
+    else:
+        open("/root/opening.flag", "w").close()
+
+def show_animation_sequence(folder_path="./img/3D/", frame_count=240, fps=30, disp=None):
+    delay = 1.0 / fps
+
+    image_files = sorted([
+        f for f in os.listdir(folder_path)
+        if f.lower().endswith('.png')
+    ])
+
+    for filename in image_files:
+        image_path = os.path.join(folder_path, filename)
+        image = Image.open(image_path)
+        if disp:
+            disp.ShowImage(image)
+        time.sleep(delay)
+    time.sleep(1)
+
+def update_spinner(spinner):
+    next_dot_count = (spinner.count('.') + 1) % 4
+    return '.' * next_dot_count + ' ' * (3 - next_dot_count)
 
 def high_frequency_tasks():
     logging.debug("high_frequency_tasks()")
