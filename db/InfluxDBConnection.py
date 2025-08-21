@@ -24,6 +24,7 @@ class InfluxDBConnectionHandler:
         self.cons = 0
 
     def connect_to_influxdb(self):
+        current_attempt = 0
         while self.client is None:
             try:
                 client = InfluxDBClient(host=self.host, port=self.port, username=self.username, password=self.password,
@@ -35,12 +36,14 @@ class InfluxDBConnectionHandler:
                     logging.warning("InfluxDB: Connection failed: ping unsuccessful")
                     self.client = None
             except Exception as e:
-                logging.error("InfluxDB: An error occurred:", str(e))
+                logging.error(f"InfluxDB: An error occurred: {e}")
                 self.client = None
 
             if self.client is None:
-                logging.info(f"InfluxDB: Retrying connection in {self.retry_interval} seconds...")
-                time.sleep(self.retry_interval)
+                delay = int(min(300, self.retry_interval * (1.5 ** current_attempt)))
+                logging.info(f"InfluxDB: Retrying connection in {delay} seconds...")
+                time.sleep(delay)
+                current_attempt += 1
 
     def start(self):
         self.connection_thread.start()
@@ -60,43 +63,43 @@ class InfluxDBConnectionHandler:
 
     def fetch_latest_record(self):
         time.sleep(3)
-        max_reconnect_attempts = 60
         current_attempt = 0
         while True:
-            while self.client is None or current_attempt < max_reconnect_attempts:
+            if self.client is None:
+                delay = int(min(300, self.retry_interval * (1.5 ** current_attempt)))
+                logging.info(f"InfluxDB: Client is not connected, retrying connection in {delay} seconds...")
+                time.sleep(delay)
                 current_attempt += 1
+                continue
 
-                if self.client is None:
-                    logging.info(f"InfluxDB: Client is not connected, retrying connection in {self.retry_interval} seconds...")
-                    self.connect_to_influxdb()
-                    time.sleep(self.retry_interval)
-                else:
-                    try:
-                        result1 = self.client.query(f'SELECT "active_percent" FROM "status_exec" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
-                        points1 = list(result1.get_points())
-                        if points1:
-                            self.exec = points1[0]['active_percent']
+            current_attempt = 0
+            try:
+                    result1 = self.client.query(f'SELECT "active_percent" FROM "status_exec" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
+                    points1 = list(result1.get_points())
+                    if points1:
+                        self.exec = points1[0]['active_percent']
 
-                        result2 = self.client.query(
-                            f'SELECT "active_percent" FROM "status_node" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
-                        points2 = list(result2.get_points())
-                        if points2:
-                            self.node = points2[0]['active_percent']
+                    result2 = self.client.query(
+                        f'SELECT "active_percent" FROM "status_node" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
+                    points2 = list(result2.get_points())
+                    if points2:
+                        self.node = points2[0]['active_percent']
 
-                        result3 = self.client.query(
-                            f'SELECT "active_percent" FROM "status_consensus" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
-                        points3 = list(result3.get_points())
-                        if points3:
-                            self.cons = points3[0]['active_percent']
+                    result3 = self.client.query(
+                        f'SELECT "active_percent" FROM "status_consensus" WHERE "host"::tag =~ /^{self.host}_s$/ ORDER BY time DESC LIMIT 1')
+                    points3 = list(result3.get_points())
+                    if points3:
+                        self.cons = points3[0]['active_percent']
 
-                        # logging.info(f'InfluxDB: {self.exec} / {self.node} / {self.cons}')
+                    # logging.info(f'InfluxDB: {self.exec} / {self.node} / {self.cons}')
 
-                        time.sleep(self.fetch_interval)
-                    except Exception as e:
-                        logging.error(f'InfluxDB: An error occurred while fetching the latest record: {str(e)}')
-                        self.client = None
-                        break
+                    time.sleep(self.fetch_interval)
 
-            if current_attempt >= max_reconnect_attempts:
-                logging.warning("InfluxDB: Failed to reconnect after 10 minutes. Stopping attempts to fetch data.")
-                break
+            except Exception as e:
+                logging.error(f'InfluxDB: An error occurred while fetching the latest record: {str(e)}')
+                self.client = None
+                self.exec = 0
+                self.node = 0
+                self.cons = 0
+                self.connection_thread = threading.Thread(target=self.connect_to_influxdb)
+                self.connection_thread.start()
