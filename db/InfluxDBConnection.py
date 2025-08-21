@@ -103,3 +103,4 @@ class InfluxDBConnectionHandler:
                 self.cons = 0
                 self.connection_thread = threading.Thread(target=self.connect_to_influxdb)
                 self.connection_thread.start()
+                time.sleep(3)
