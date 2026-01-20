@@ -24,6 +24,7 @@ import socket
 import netifaces
 import logging
 import json
+import math
 from lcd import LCD_1inch69
 from PIL import Image, ImageDraw, ImageFont
 from db.InfluxDBConnection import InfluxDBConnectionHandler
@@ -32,6 +33,14 @@ from db.InfluxDBConnection import InfluxDBConnectionHandler
 SHOW_PER_CORE = False
 # False = [0 - 100%]
 # True  = [0 - 400%]
+
+# Animation constants for subtle UI motion
+animation_tick = 0
+GRID_WIDTH = 240
+GRID_HEIGHT = 280
+COL_WIDTH = GRID_WIDTH // 3
+ROW_HEIGHT = GRID_HEIGHT // 3
+STATUS_GLOW_WIDTH = 18
 
 # InfluxDB config
 host = "localhost"
@@ -116,12 +125,15 @@ def main():
     error_msg_color = 0
     try:
         
-        # Get the current time (in seconds)
-        next_time = time.time() + 1
+        # New loop logic for smoother animation
         skip = 0
         logging.info('Entering forever loop')
         while True:
+            loop_start = time.time()
             try:
+                global animation_tick
+                animation_tick = (animation_tick + 1) % 10000
+
                 if install_stage != 100:
                     status = update_install_stage(disp=disp)
                     spinner = update_spinner(spinner)
@@ -175,25 +187,28 @@ def main():
                         else:
                                 draw.text((120, 5*35+60), f'For more info visit:', fill=C_T1, font=Font3_5, anchor="mm")
 
-                        draw.text((120, 10), f'{time.strftime('%d.%m.%y %H:%M:%S', time.localtime())}', fill=C_T2, font=Font3_5, anchor="mm")
+                        draw.text((120, 10), f"{time.strftime('%d.%m.%y %H:%M:%S', time.localtime())}", fill=C_T2, font=Font3_5, anchor="mm")
                         draw.text((120, 5*35+80), f'http://{ip_local_address}', fill=C_T1, font=Font3_5, anchor="mm")
+                    disp.ShowImage(image1.convert("RGB"))
                     
-                    disp.ShowImage(image1)
-                    next_time -= 0.5
+                    time.sleep(0.5)
 
                 else:
-                    high_frequency_tasks() # every second
+                    if skip % 20 == 0:
+                        high_frequency_tasks() # every second approx
 
-                    if skip % 10 == 0:
-                        medium_frequency_tasks()
+                    if skip % 200 == 0:
+                        medium_frequency_tasks() # every 10s
 
-                    if skip % 30 == 0:
-                        low_frequency_tasks()
+                    if skip % 600 == 0:
+                        low_frequency_tasks() # every 30s
 
 
                     # Draw background
-                    image1 = Image.open('./img/lcdbg.png')
-                    draw = ImageDraw.Draw(image1)
+                    image1 = Image.open('./img/lcdbg.png').convert("RGBA")
+                    draw = ImageDraw.Draw(image1, 'RGBA')
+                    
+                    draw_dashboard_animation(draw, animation_tick)
 
                     # Draw vertical lines
                     draw.line([(240 / 3, 0), (240 / 3, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
@@ -224,14 +239,6 @@ def main():
                     draw.text((120 + x, 108 + y), 'DISK', fill=C_T2, font=Font2, anchor="mm")
                     draw.text((120 + x, 140 + y), f'{int(disk.percent)}%', fill=C_T1, font=Font1, anchor="mm")
                     draw.text((122 + x, 170 + y), f'{disk_free_tb:.2f}TB', fill=C_T2, font=Font3, anchor="mm")
-
-                    # # CPU TEMP
-                    # x = 0
-                    # y = -90
-                    # draw.text((120 + x, 108 + y), 'TEMP', fill=C_T2, font=Font2, anchor="mm")
-                    # ct = int(cpu_temp)
-                    # draw.text((120 + x, 140 + y), f'{ct}', fill=C_T1, font=Font1, anchor="mm")
-                    # draw.text((145 + x, 170 + y), '°C', fill=C_T2, font=Font2, anchor="mm")
 
                     # EXEC
                     x = -80
@@ -273,13 +280,19 @@ def main():
                     draw.text((120, 170 + y - 10), f'{hostname}.local', fill=C_T1, font=Font3, anchor="mm")
 
                     # Send image to lcd display
-                    disp.ShowImage(image1)
+                    disp.ShowImage(image1.convert("RGB"))
 
                     skip += 1
+                    
+                    elapsed = time.time() - loop_start
+                    delay = max(0, 0.05 - elapsed)
+                    time.sleep(delay)
 
-                # Wait until the next call
-                time.sleep(max(0, next_time - time.time()))
-                next_time += (time.time() - next_time) // 1 * 1 + 1
+            except Exception as error:
+                logging.error("An exception occurred: " + type(error).__name__)
+                time.sleep(1)
+
+
             except Exception as error:
                 logging.error("An exception occurred: " + type(error).__name__)
                 time.sleep(1)
@@ -437,6 +450,20 @@ def show_animation_sequence(folder_path="./img/3D/", frame_count=240, fps=30, di
 def update_spinner(spinner):
     next_dot_count = (spinner.count('.') + 1) % 4
     return '.' * next_dot_count + ' ' * (3 - next_dot_count)
+
+def draw_dashboard_animation(draw, tick):
+    # Activity Pulse at bottom
+    base_y = 275
+    width = 240
+    phase = tick * 0.5 # speed
+    
+    # Draw a sine wave
+    points = []
+    for x in range(0, width, 4):
+        y_off = math.sin((x * 0.05) + phase) * 4
+        points.append((x, base_y + y_off))
+    
+    draw.line(points, fill=(0, 255, 0, 80), width=2)
 
 def high_frequency_tasks():
     logging.debug("high_frequency_tasks()")
