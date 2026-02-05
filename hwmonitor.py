@@ -24,6 +24,7 @@ import socket
 import netifaces
 import logging
 import json
+import math
 import signal
 from lcd import LCD_1inch69
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance
@@ -33,6 +34,14 @@ from db.InfluxDBConnection import InfluxDBConnectionHandler
 SHOW_PER_CORE = False
 # False = [0 - 100%]
 # True  = [0 - 400%]
+
+# Animation constants for subtle UI motion
+animation_tick = 0
+GRID_WIDTH = 240
+GRID_HEIGHT = 280
+COL_WIDTH = GRID_WIDTH // 3
+ROW_HEIGHT = GRID_HEIGHT // 3
+STATUS_GLOW_WIDTH = 18
 
 # InfluxDB config
 host = "localhost"
@@ -144,12 +153,17 @@ def main():
     error_msg_color = 0
     try:
         
-        # Get the current time (in seconds)
-        next_time = time.time() + 1
+        # New loop logic for smoother animation
+        bg_template = Image.open('./img/lcdbg.png').convert("RGBA")
+        cached_frame = None
         skip = 0
         logging.info('Entering forever loop')
         while True:
+            loop_start = time.time()
             try:
+                global animation_tick
+                animation_tick = (animation_tick + 1) % 10000
+
                 if install_stage != 100:
                     status = update_install_stage(disp=disp)
                     spinner = update_spinner(spinner)
@@ -203,111 +217,111 @@ def main():
                         else:
                                 draw.text((120, 5*35+60), f'For more info visit:', fill=C_T1, font=Font3_5, anchor="mm")
 
-                        draw.text((120, 10), f'{time.strftime('%d.%m.%y %H:%M:%S', time.localtime())}', fill=C_T2, font=Font3_5, anchor="mm")
+                        draw.text((120, 10), f"{time.strftime('%d.%m.%y %H:%M:%S', time.localtime())}", fill=C_T2, font=Font3_5, anchor="mm")
                         draw.text((120, 5*35+80), f'http://{ip_local_address}', fill=C_T1, font=Font3_5, anchor="mm")
+                    disp.ShowImage(image1.convert("RGB"))
                     
-                    disp.ShowImage(image1)
-                    next_time -= 0.5
+                    time.sleep(0.5)
 
                 else:
-                    high_frequency_tasks() # every second
+                    if skip % 10 == 0 or cached_frame is None:
+                        high_frequency_tasks() # every second approx
 
-                    if skip % 10 == 0:
-                        medium_frequency_tasks()
+                        # Update cached frame every second 
+                        image_base = bg_template.copy()
+                        draw = ImageDraw.Draw(image_base)
 
-                    if skip % 30 == 0:
-                        low_frequency_tasks()
+                        # Draw vertical lines
+                        draw.line([(240 / 3, 0), (240 / 3, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
+                        draw.line([((240 / 3) * 2, 0), ((240 / 3) * 2, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
 
+                        # Draw vertical lines
+                        draw.line([(0, 280 / 3), (240, 280 / 3)], fill="BLACK", width=2, joint=None)
+                        draw.line([(0, (280 / 3) * 2), (240, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
 
-                    # Draw background
-                    image1 = Image.open('./img/lcdbg.png')
-                    draw = ImageDraw.Draw(image1)
+                        # CPU
+                        x = 0
+                        y = 0
+                        draw.text((120 + x, 108 + y), 'CPU', fill=C_T2, font=Font2, anchor="mm")
 
-                    # Draw vertical lines
-                    draw.line([(240 / 3, 0), (240 / 3, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
-                    draw.line([((240 / 3) * 2, 0), ((240 / 3) * 2, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
-
-                    # Draw vertical lines
-                    draw.line([(0, 280 / 3), (240, 280 / 3)], fill="BLACK", width=2, joint=None)
-                    draw.line([(0, (280 / 3) * 2), (240, (280 / 3) * 2)], fill="BLACK", width=2, joint=None)
-
-                    # CPU
-                    x = 0
-                    y = 0
-                    draw.text((120 + x, 108 + y), 'CPU', fill=C_T2, font=Font2, anchor="mm")
-
-                    if SHOW_PER_CORE:
-                        draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage_400(int(cpu_percent))}', font=Font1, anchor="mm")
-                        draw.text((150 + x, 108 + y), '%', fill=C_T2, font=Font3, anchor="mm")
-                    else:
-                        draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage(int(cpu_percent))}', font=Font1, anchor="mm")
-                        draw.text((150 + x, 145 + y), '%', fill=C_T2, font=Font3, anchor="mm")
-                    ct = int(cpu_temp)
-                    draw.text((122 + x, 170 + y), f'{ct}°C', fill=C_T2, font=Font2, anchor="mm")
+                        if SHOW_PER_CORE:
+                            draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage_400(int(cpu_percent))}', font=Font1, anchor="mm")
+                            draw.text((150 + x, 108 + y), '%', fill=C_T2, font=Font3, anchor="mm")
+                        else:
+                            draw.text((120 + x, 140 + y), f'{int(cpu_percent)}', fill=f'{value_to_hex_color_cpu_usage(int(cpu_percent))}', font=Font1, anchor="mm")
+                            draw.text((150 + x, 145 + y), '%', fill=C_T2, font=Font3, anchor="mm")
+                        ct = int(cpu_temp)
+                        draw.text((122 + x, 170 + y), f'{ct}°C', fill=C_T2, font=Font2, anchor="mm")
 
 
-                    # DISK
-                    x = -80
-                    y = 0
-                    draw.text((120 + x, 108 + y), 'DISK', fill=C_T2, font=Font2, anchor="mm")
-                    draw.text((120 + x, 140 + y), f'{int(disk.percent)}%', fill=C_T1, font=Font1, anchor="mm")
-                    draw.text((122 + x, 170 + y), f'{disk_free_tb:.2f}TB', fill=C_T2, font=Font3, anchor="mm")
+                        # DISK
+                        x = -80
+                        y = 0
+                        draw.text((120 + x, 108 + y), 'DISK', fill=C_T2, font=Font2, anchor="mm")
+                        draw.text((120 + x, 140 + y), f'{int(disk.percent)}%', fill=C_T1, font=Font1, anchor="mm")
+                        draw.text((122 + x, 170 + y), f'{disk_free_tb:.2f}TB', fill=C_T2, font=Font3, anchor="mm")
 
-                    # # CPU TEMP
-                    # x = 0
-                    # y = -90
-                    # draw.text((120 + x, 108 + y), 'TEMP', fill=C_T2, font=Font2, anchor="mm")
-                    # ct = int(cpu_temp)
-                    # draw.text((120 + x, 140 + y), f'{ct}', fill=C_T1, font=Font1, anchor="mm")
-                    # draw.text((145 + x, 170 + y), '°C', fill=C_T2, font=Font2, anchor="mm")
+                        # EXEC
+                        x = -80
+                        y = -90
+                        draw.text((120 + x, 108 + y), 'EXEC', fill=C_T2, font=Font2, anchor="mm")
+                        draw.text((120 + x, 140 + y), f'{map_status(exec)}', fill=map_status_color(exec), font=Font4, anchor="mm")
 
-                    # EXEC
-                    x = -80
-                    y = -90
-                    draw.text((120 + x, 108 + y), 'EXEC', fill=C_T2, font=Font2, anchor="mm")
-                    draw.text((120 + x, 140 + y), f'{map_status(exec)}', fill=map_status_color(exec), font=Font4, anchor="mm")
+                        # NODE
+                        x = 0
+                        y = -90
+                        draw.text((120 + x, 108 + y), 'NODE', fill=C_T2, font=Font2, anchor="mm")
+                        draw.text((120 + x, 140 + y), f'{map_status(node)}', fill=map_status_color(node), font=Font4, anchor="mm")
 
-                    # NODE
-                    x = 0
-                    y = -90
-                    draw.text((120 + x, 108 + y), 'NODE', fill=C_T2, font=Font2, anchor="mm")
-                    draw.text((120 + x, 140 + y), f'{map_status(node)}', fill=map_status_color(node), font=Font4, anchor="mm")
+                        # CONS
+                        x = 80
+                        y = -90
+                        draw.text((120 + x, 108 + y), 'CONS', fill=C_T2, font=Font2, anchor="mm")
+                        draw.text((120 + x, 140 + y), f'{map_status(cons)}', fill=map_status_color(cons), font=Font4, anchor="mm")
 
-                    # CONS
-                    x = 80
-                    y = -90
-                    draw.text((120 + x, 108 + y), 'CONS', fill=C_T2, font=Font2, anchor="mm")
-                    draw.text((120 + x, 140 + y), f'{map_status(cons)}', fill=map_status_color(cons), font=Font4, anchor="mm")
+                        # RAM
+                        x = 80
+                        y = 0
+                        draw.text((120 + x, 108 + y), 'RAM', fill=C_T2, font=Font2, anchor="mm")
+                        draw.text((120 + x, 140 + y), f'{int(mem.percent)}', fill=C_T1, font=Font1, anchor="mm")
+                        draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
 
-                    # RAM
-                    x = 80
-                    y = 0
-                    draw.text((120 + x, 108 + y), 'RAM', fill=C_T2, font=Font2, anchor="mm")
-                    draw.text((120 + x, 140 + y), f'{int(mem.percent)}', fill=C_T1, font=Font1, anchor="mm")
-                    draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
+                        # SWAP
+                        # x = 80
+                        # y = 0
+                        # draw.text((120 + x, 108 + y), 'SWAP', fill=C_T2, font=Font2, anchor="mm")
+                        # draw.text((120 + x, 140 + y), f'{int(swap.percent)}', fill=C_T1, font=Font1, anchor="mm")
+                        # draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
 
-                    # SWAP
-                    # x = 80
-                    # y = 0
-                    # draw.text((120 + x, 108 + y), 'SWAP', fill=C_T2, font=Font2, anchor="mm")
-                    # draw.text((120 + x, 140 + y), f'{int(swap.percent)}', fill=C_T1, font=Font1, anchor="mm")
-                    # draw.text((145 + x, 170 + y), '%', fill=C_T2, font=Font2, anchor="mm")
+                        # Local IP / HostName
+                        x = 40
+                        y = 95
+                        draw.text((120, 108 + y), 'IP / HOSTNAME', fill=C_T2, font=Font2, anchor="mm")
+                        draw.text((120, 170 + y - 35), f'{ip_local_address}', fill=C_T1, font=Font3, anchor="mm")
+                        draw.text((120, 170 + y - 10), f'{hostname}.local', fill=C_T1, font=Font3, anchor="mm")
 
-                    # Local IP / HostName
-                    x = 40
-                    y = 95
-                    draw.text((120, 108 + y), 'IP / HOSTNAME', fill=C_T2, font=Font2, anchor="mm")
-                    draw.text((120, 170 + y - 35), f'{ip_local_address}', fill=C_T1, font=Font3, anchor="mm")
-                    draw.text((120, 170 + y - 10), f'{hostname}.local', fill=C_T1, font=Font3, anchor="mm")
+                        cached_frame = image_base
+
+                    if skip % 100 == 0:
+                        medium_frequency_tasks() # every 10s
+
+                    if skip % 300 == 0:
+                        low_frequency_tasks() # every 30s
+
+                    display_frame = cached_frame.copy()
+                    draw_anim = ImageDraw.Draw(display_frame)
+                    
+                    draw_dashboard_animation(draw_anim, animation_tick)
 
                     # Send image to lcd display
-                    disp.ShowImage(image1)
+                    disp.ShowImage(display_frame.convert("RGB"))
 
                     skip += 1
+                    
+                    elapsed = time.time() - loop_start
+                    delay = max(0, 0.1 - elapsed) # 10 FPS
+                    time.sleep(delay)
 
-                # Wait until the next call
-                time.sleep(max(0, next_time - time.time()))
-                next_time += (time.time() - next_time) // 1 * 1 + 1
             except Exception as error:
                 logging.error("An exception occurred: " + type(error).__name__)
                 time.sleep(1)
@@ -466,6 +480,20 @@ def show_animation_sequence(folder_path="./img/3D/", frame_count=240, fps=30, di
 def update_spinner(spinner):
     next_dot_count = (spinner.count('.') + 1) % 4
     return '.' * next_dot_count + ' ' * (3 - next_dot_count)
+
+def draw_dashboard_animation(draw, tick):
+    # Activity Pulse at bottom
+    base_y = 275
+    width = 240
+    phase = tick * 0.1 # speed
+    
+    # Draw a sine wave
+    points = []
+    for x in range(0, width, 4):
+        y_off = math.sin((x * 0.05) + phase) * 3
+        points.append((x, base_y + y_off))
+    
+    draw.line(points, fill=(0, 255, 0, 80), width=2)
 
 def high_frequency_tasks():
     logging.debug("high_frequency_tasks()")
