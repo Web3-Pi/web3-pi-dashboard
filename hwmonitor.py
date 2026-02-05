@@ -24,8 +24,9 @@ import socket
 import netifaces
 import logging
 import json
+import signal
 from lcd import LCD_1inch69
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance
 from db.InfluxDBConnection import InfluxDBConnectionHandler
 
 # Choose how to display CPU usage percentages
@@ -49,7 +50,7 @@ RST = 27
 DC = 25
 BL = 18
 bus = 0
-device = 0
+disp = None
 
 # Text colors
 C_BG = '#00129A' #LCD bacground
@@ -63,6 +64,32 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
+
+def display_final_screen():
+    try:
+        global disp
+
+        # Open image -> invert colours -> convert to grayscale -> dim to 15% brightness
+        img = ImageEnhance.Brightness(
+            ImageOps.invert(
+                Image.open('./img/Web3Pi_logo_0.png').convert('RGB')
+            ).convert('L')
+        ).enhance(0.15).convert('RGB')
+
+        disp.ShowImage(img)
+
+    except Exception as e:
+        logging.error(f"Display final screen error: {e}")
+
+# Function to handle shutdown signals
+def handle_shutdown_signal(signum, frame):
+    logging.info("Shutting down, clearing the screen...")
+    display_final_screen()
+    sys.exit(0)
+
+# Register signal handlers for SIGINT and SIGTERM
+signal.signal(signal.SIGINT, handle_shutdown_signal)
+signal.signal(signal.SIGTERM, handle_shutdown_signal)
 
 # For registering errors during installation
 error_in_stage = {"0": False, "1": False, "2": False, "100": False, "any": False}
@@ -82,6 +109,7 @@ def main():
     hostname = get_hostname()
 
     # display with hardware SPI:
+    global disp
     disp = LCD_1inch69.LCD_1inch69()
     # Initialize library.
     disp.Init()
@@ -293,6 +321,7 @@ def main():
     logging.info('End forever loop')
 
     logging.info('Hardware Monitor End')
+    display_final_screen()
 
 def print_stats():
     try:
