@@ -36,7 +36,10 @@ class InfluxDBConnectionHandler:
                     logging.warning("InfluxDB: Connection failed: ping unsuccessful")
                     self.client = None
             except Exception as e:
-                logging.error(f"InfluxDB: An error occurred: {e}")
+                try:
+                    logging.error(f"InfluxDB: An error occurred: {e}")
+                except:
+                    logging.error("InfluxDB: An error occurred while logging error")
                 self.client = None
 
             if self.client is None:
@@ -96,7 +99,10 @@ class InfluxDBConnectionHandler:
                     time.sleep(self.fetch_interval)
 
             except Exception as e:
-                logging.error(f'InfluxDB: An error occurred while fetching the latest record: {str(e)}')
+                try:
+                    logging.error(f'InfluxDB: An error occurred while fetching the latest record: {str(e)}')
+                except:
+                    logging.error("InfluxDB: An error occurred while logging error")
                 self.client = None
                 self.exec = 0
                 self.node = 0
