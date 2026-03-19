@@ -1,0 +1,10 @@
+[tools]
+zig = "latest"
+
+[tools.rust]
+version = "latest"
+targets = "aarch64-unknown-linux-gnu"
+
+[tasks.build-aarch64]
+description = "Build release binary for aarch64 using cargo-zigbuild"
+run = "cargo zigbuild --release --bin w3p-hwm --target aarch64-unknown-linux-gnu"
