@@ -16,26 +16,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.12"
+          targets: aarch64-unknown-linux-gnu
 
-      - name: Install dependencies and build
+      - name: Build release binary
         run: |
-          sudo apt-get update
-          sudo apt-get -y install patchelf
-          python -m venv venv
-          source venv/bin/activate
-          pip install -r requirements.txt
-          pip install nuitka
-          nuitka --onefile --standalone hwmonitor.py
+          cargo build --release --bin w3p-hwm
 
       - name: Prepare release artifacts
         run: |
           mkdir web3-pi-dashboard-bin
-          cp hwmonitor.bin web3-pi-dashboard-bin/hwmonitor
-          chmod +x web3-pi-dashboard-bin/hwmonitor
+          cp target/release/w3p-hwm web3-pi-dashboard-bin/w3p-hwm
+          chmod +x web3-pi-dashboard-bin/w3p-hwm
+          cp run.sh web3-pi-dashboard-bin/
+          cp create_service.sh web3-pi-dashboard-bin/
+          cp remove_service.sh web3-pi-dashboard-bin/
           cp -r font/ web3-pi-dashboard-bin/
           cp -r img/ web3-pi-dashboard-bin/
           zip -r web3-pi-dashboard-bin.zip web3-pi-dashboard-bin/

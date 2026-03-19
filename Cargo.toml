@@ -1,0 +1,33 @@
+[package]
+name = "w3p-hwm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0"
+tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "signal", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2"] }
+urlencoding = "2.1"
+sysinfo = "0.37"
+get_if_addrs = "0.5"
+hostname = "0.4"
+image = "0.25"
+imageproc = "0.25"
+ab_glyph = "0.2"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+spidev = "0.7"
+rppal = "0.22"
+linux-embedded-hal = "0.4"
+embedded-hal = "1.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[lints.clippy]
+mod_module_files = "deny"

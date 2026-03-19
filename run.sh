@@ -6,41 +6,20 @@ echo "dirname : [$(dirname "$0")]"
 echo "pwd     : [$(pwd)]"
 
 DIRNAME="$(dirname "$0")"
-APPLICATION="hwmonitor.py"
+APPLICATION="w3p-hwm"
 
 cd $DIRNAME
 
-# Check if the provided Python application file exists
-if [ ! -f "$APPLICATION" ]; then
-    echo "The specified Python application file '$APPLICATION' does not exist."
-    exit 0
+# Check if Cargo.toml exists
+if [ ! -f "Cargo.toml" ]; then
+    echo "Cargo.toml not found in the current directory."
+    exit 1
 fi
 
-# Check if requirements.txt file exists
-if [ ! -f "requirements.txt" ]; then
-    echo "requirements.txt file not found in the current directory."
-    exit 0
-fi
+echo "Building Rust application..."
+cargo build --release --bin $APPLICATION || exit 1
 
-# Create a virtual environment if it does not exist
-if [ ! -d "venv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv venv
-fi
-
-# Activate the virtual environment
-source venv/bin/activate
-
-# Install the required packages
-echo "Installing required packages..."
-pip install -r requirements.txt
-
-# Run the Python application
 echo "Running application $APPLICATION..."
-python3 $APPLICATION
-
-# Deactivate the virtual environment after finishing
-echo "Deactivate the virtual environment"
-deactivate
+./target/release/$APPLICATION
 
 echo 0

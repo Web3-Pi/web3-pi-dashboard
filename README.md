@@ -13,7 +13,7 @@ We have designed our own 3D model of the enclosure cover with a space for the di
 
 ## Requirements
 
-- Python >= 3.9
+- Rust toolchain (`cargo`/`rustc`)
 - Run on Raspberry Pi
 - [SPI interface enabled](docs/EnableSPI.md) (default on Web3Pi image)
 - 1.69" LCD display with ST7789V2 Driver
@@ -84,13 +84,13 @@ To stop the program, press Ctrl+C.
 
 ## Customisation
 
-In the file `hwmonitor.py`, there is a flag `SHOW_PER_CORE` that determines whether the CPU usage percentage should be in the range of `0-100%` or `0-400%`.
+In the Rust configuration file `src/app/config.rs`, there is a flag `SHOW_PER_CORE` that determines whether the CPU usage percentage should be in the range of `0-100%` or `0-400%`.
 
 0-400% represents the summed load of each core in the Raspberry Pi.
 
-```python
+```rust
 # Choose how to display CPU usage percentages
-SHOW_PER_CORE = False
+pub const SHOW_PER_CORE: bool = false;
 # False = [0 - 100%]
 # True  = [0 - 400%]
 ```
@@ -98,6 +98,8 @@ note: Restart the service after making changes.
 ```shell
 sudo systemctl restart w3p_hwm.service
 ```
+
+For full runtime/configuration values, see [docs/Configuration.md](docs/Configuration.md).
 
 
 ## 3D Model
