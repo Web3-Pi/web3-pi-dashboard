@@ -82,6 +82,28 @@ chmod +x run.sh
 ```
 To stop the program, press Ctrl+C.
 
+## Build with mise
+
+The project uses [mise](https://mise.jdx.dev/) for build tooling.
+
+### 1. Install tools from `mise.toml`
+
+```shell
+mise install
+```
+
+### 2. Build AArch64 release binary (Raspberry Pi target)
+
+```shell
+mise run build-aarch64
+```
+
+### 3. Output binary path
+
+```shell
+target/aarch64-unknown-linux-gnu/release/w3p-hwm
+```
+
 ## Customisation
 
 In the Rust configuration file `src/app/config.rs`, there is a flag `SHOW_PER_CORE` that determines whether the CPU usage percentage should be in the range of `0-100%` or `0-400%`.
