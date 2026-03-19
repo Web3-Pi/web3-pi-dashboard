@@ -1,5 +1,6 @@
 [tools]
 zig = "latest"
+"cargo:cargo-zigbuild" = "latest"
 
 [tools.rust]
 version = "latest"
