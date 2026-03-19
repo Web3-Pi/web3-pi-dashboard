@@ -3,7 +3,7 @@ mod display;
 mod platform;
 mod tasks;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
 use app::{
@@ -14,8 +14,9 @@ use display::{
     render::{Renderer, blank_frame},
     st7789::{DisplayBackend, MockDisplay, St7789Display},
 };
+use image::RgbImage;
 use tokio::{signal, sync::RwLock, task::JoinSet, time};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 fn init_logging() {
     tracing_subscriber::fmt()
@@ -24,6 +25,41 @@ fn init_logging() {
                 .unwrap_or_else(|_| "info,w3p_hwm=debug".into()),
         )
         .init();
+}
+
+fn diff_bbox(prev: &RgbImage, curr: &RgbImage) -> Option<(u16, u16, u16, u16)> {
+    if prev.dimensions() != curr.dimensions() {
+        return None;
+    }
+    let width = curr.width() as usize;
+    let mut min_x = width;
+    let mut min_y = curr.height() as usize;
+    let mut max_x = 0usize;
+    let mut max_y = 0usize;
+    let mut changed = false;
+
+    for (idx, (a, b)) in prev.pixels().zip(curr.pixels()).enumerate() {
+        if a != b {
+            changed = true;
+            let x = idx % width;
+            let y = idx / width;
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+    }
+
+    if !changed {
+        return None;
+    }
+
+    Some((
+        min_x as u16,
+        min_y as u16,
+        (max_x - min_x + 1) as u16,
+        (max_y - min_y + 1) as u16,
+    ))
 }
 
 async fn preflight_checks() -> Result<()> {
@@ -73,6 +109,8 @@ async fn render_loop<D: DisplayBackend + ?Sized>(
     let mut cached_dashboard = blank_frame();
     let mut cached_tick = 0_u64;
     let mut blink = false;
+    let animation_started_at = Instant::now();
+    let mut prev_dashboard_frame: Option<RgbImage> = None;
     loop {
         let snapshot = { state.read().await.clone() };
         if snapshot.install.stage != InstallStage::Done {
@@ -83,6 +121,7 @@ async fn render_loop<D: DisplayBackend + ?Sized>(
             let mut guard = state.write().await;
             guard.advance_spinner();
             guard.ui.animation_tick = guard.ui.animation_tick.wrapping_add(1);
+            prev_dashboard_frame = None;
             continue;
         }
 
@@ -90,18 +129,73 @@ async fn render_loop<D: DisplayBackend + ?Sized>(
             play_animation(display).await?;
             let mut guard = state.write().await;
             guard.install.needs_stage_done_animation = false;
+            prev_dashboard_frame = None;
         }
 
         interval.tick().await;
-        if cached_tick.is_multiple_of(10) {
+        if cached_tick.is_multiple_of(config::LOOP_FPS) {
             cached_dashboard = renderer.render_dashboard_base(&snapshot);
         }
+
         let mut frame = cached_dashboard.clone();
-        renderer.draw_dashboard_animation(&mut frame, snapshot.ui.animation_tick);
-        display.show_image(&frame)?;
+        renderer.draw_dashboard_animation(&mut frame, animation_started_at.elapsed().as_secs_f32());
+
+        match prev_dashboard_frame.as_ref().and_then(|prev| diff_bbox(prev, &frame)) {
+            Some((x, y, width, height)) => {
+                let ts = Instant::now();
+                display.show_region(&frame, x, y, width, height)?;
+                debug!(
+                    x,
+                    y,
+                    width,
+                    height,
+                    elapsed = ?ts.elapsed(),
+                    "show region"
+                );
+            }
+            None if prev_dashboard_frame.is_some() => {}
+            None => {
+                let ts = Instant::now();
+                display.show_image(&frame)?;
+                debug!(elapsed = ?ts.elapsed(), "show image");
+            }
+        }
+        prev_dashboard_frame = Some(frame);
+
         cached_tick = cached_tick.wrapping_add(1);
         let mut guard = state.write().await;
         guard.ui.animation_tick = guard.ui.animation_tick.wrapping_add(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use image::{ImageBuffer, Rgb};
+
+    use super::diff_bbox;
+
+    #[test]
+    fn diff_bbox_none_when_equal() {
+        let a = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
+        let b = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
+        assert_eq!(diff_bbox(&a, &b), None);
+    }
+
+    #[test]
+    fn diff_bbox_single_pixel() {
+        let a = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
+        let mut b = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
+        b.put_pixel(2, 1, Rgb([1, 2, 3]));
+        assert_eq!(diff_bbox(&a, &b), Some((2, 1, 1, 1)));
+    }
+
+    #[test]
+    fn diff_bbox_multi_pixel_bounds() {
+        let a = ImageBuffer::from_pixel(6, 5, Rgb([0, 0, 0]));
+        let mut b = ImageBuffer::from_pixel(6, 5, Rgb([0, 0, 0]));
+        b.put_pixel(1, 2, Rgb([1, 2, 3]));
+        b.put_pixel(4, 4, Rgb([4, 5, 6]));
+        assert_eq!(diff_bbox(&a, &b), Some((1, 2, 4, 3)));
     }
 }
 
@@ -126,7 +220,7 @@ async fn shutdown_signal() {
     }
 }
 
-#[tokio::main(flavor = "multi_thread")]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     init_logging();
     info!("Hardware Monitor Start");

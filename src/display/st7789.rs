@@ -12,6 +12,7 @@ pub trait DisplayBackend {
     fn clear(&mut self) -> Result<()>;
     fn set_backlight(&mut self, duty_percent: u8) -> Result<()>;
     fn show_image(&mut self, image: &RgbImage) -> Result<()>;
+    fn show_region(&mut self, image: &RgbImage, x: u16, y: u16, width: u16, height: u16) -> Result<()>;
 }
 
 pub struct St7789Display {
@@ -149,23 +150,44 @@ impl DisplayBackend for St7789Display {
     }
 
     fn show_image(&mut self, image: &RgbImage) -> Result<()> {
+        self.show_region(image, 0, 0, self.width, self.height)
+    }
+
+    fn show_region(&mut self, image: &RgbImage, x: u16, y: u16, width: u16, height: u16) -> Result<()> {
         if image.width() != self.width as u32 || image.height() != self.height as u32 {
             anyhow::bail!("image dimensions must be {}x{}", self.width, self.height);
         }
-        let mut buf = Vec::with_capacity((self.width as usize) * (self.height as usize) * 2);
-        for pixel in image.pixels() {
-            let r = pixel[0];
-            let g = pixel[1];
-            let b = pixel[2];
-            let hi = (r & 0xF8) | (g >> 5);
-            let lo = ((g << 3) & 0xE0) | (b >> 3);
-            buf.push(hi);
-            buf.push(lo);
+        if width == 0 || height == 0 {
+            return Ok(());
+        }
+
+        let xe = x
+            .checked_add(width - 1)
+            .ok_or_else(|| anyhow::anyhow!("region x overflow"))?;
+        let ye = y
+            .checked_add(height - 1)
+            .ok_or_else(|| anyhow::anyhow!("region y overflow"))?;
+        if xe >= self.width || ye >= self.height {
+            anyhow::bail!("region out of bounds");
+        }
+
+        let mut buf = Vec::with_capacity(width as usize * height as usize * 2);
+        for py in y..=ye {
+            for px in x..=xe {
+                let pixel = image.get_pixel(px as u32, py as u32);
+                let r = pixel[0];
+                let g = pixel[1];
+                let b = pixel[2];
+                let hi = (r & 0xF8) | (g >> 5);
+                let lo = ((g << 3) & 0xE0) | (b >> 3);
+                buf.push(hi);
+                buf.push(lo);
+            }
         }
 
         self.write_cmd(0x36)?;
         self.write_data(&[0x00])?;
-        self.set_window(0, 0, self.width - 1, self.height - 1)?;
+        self.set_window(x, y, xe, ye)?;
         self.dc.set_high();
         for chunk in buf.chunks(4096) {
             self.spi.write_all(chunk)?;
@@ -207,6 +229,25 @@ impl DisplayBackend for MockDisplay {
         }
         if !Path::new("/tmp").exists() {
             return Ok(());
+        }
+        Ok(())
+    }
+
+    fn show_region(&mut self, image: &RgbImage, x: u16, y: u16, width: u16, height: u16) -> Result<()> {
+        if image.width() != self.width || image.height() != self.height {
+            anyhow::bail!("mock image dimensions mismatch");
+        }
+        if width == 0 || height == 0 {
+            return Ok(());
+        }
+        let xe = x
+            .checked_add(width - 1)
+            .ok_or_else(|| anyhow::anyhow!("region x overflow"))?;
+        let ye = y
+            .checked_add(height - 1)
+            .ok_or_else(|| anyhow::anyhow!("region y overflow"))?;
+        if xe as u32 >= self.width || ye as u32 >= self.height {
+            anyhow::bail!("mock region out of bounds");
         }
         Ok(())
     }

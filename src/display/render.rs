@@ -252,16 +252,20 @@ impl Renderer {
         img
     }
 
-    pub fn draw_dashboard_animation(&self, image: &mut RgbImage, tick: u64) {
+    pub fn draw_dashboard_animation(&self, image: &mut RgbImage, elapsed_secs: f32) {
         let width = config::GRID_WIDTH as i32;
-        let base_y = 275.0_f32;
-        let phase = tick as f32 * 0.1;
+        let base_y = config::DASH_WAVE_BASE_Y;
+        let phase = elapsed_secs * std::f32::consts::TAU * config::DASH_WAVE_CYCLES_PER_SEC;
         for x in (0..width).step_by(4) {
             let x1 = x as f32;
             let x2 = (x + 4).min(width - 1) as f32;
-            let y1 = base_y + ((x as f32 * 0.05 + phase).sin() * 3.0);
-            let y2 = base_y + (((x + 4) as f32 * 0.05 + phase).sin() * 3.0);
-            draw_line_segment_mut(image, (x1, y1), (x2, y2), Rgb([0, 255, 0]));
+            let y1 = base_y + ((x as f32 * 0.05 + phase).sin() * config::DASH_WAVE_AMPLITUDE_PX);
+            let y2 =
+                base_y + (((x + 4) as f32 * 0.05 + phase).sin() * config::DASH_WAVE_AMPLITUDE_PX);
+            for offset in 0..config::DASH_WAVE_THICKNESS_PX {
+                let dy = offset as f32;
+                draw_line_segment_mut(image, (x1, y1 + dy), (x2, y2 + dy), Rgb([0, 255, 0]));
+            }
         }
     }
 

@@ -27,9 +27,13 @@ pub const COLOR_TEXT_SECONDARY: &str = "#A1A1A1";
 pub const COLOR_GREEN: &str = "#22C55E";
 pub const COLOR_RED: &str = "#EF4433";
 
-pub const LOOP_FPS: u64 = 10;
+pub const LOOP_FPS: u64 = 8;
 pub const INSTALL_FPS: u64 = 2;
 pub const ANIM_FPS: u64 = 30;
+pub const DASH_WAVE_CYCLES_PER_SEC: f32 = 0.35;
+pub const DASH_WAVE_AMPLITUDE_PX: f32 = 6.0;
+pub const DASH_WAVE_BASE_Y: f32 = 269.0;
+pub const DASH_WAVE_THICKNESS_PX: u8 = 2;
 pub const HIGH_TASK_INTERVAL: Duration = Duration::from_secs(1);
 pub const MEDIUM_TASK_INTERVAL: Duration = Duration::from_secs(10);
 pub const LOW_TASK_INTERVAL: Duration = Duration::from_secs(30);

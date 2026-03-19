@@ -52,9 +52,13 @@ These are Rust constants and require rebuild/redeploy after changes.
 
 | Constant | Default | Description |
 |---|---|---|
-| `LOOP_FPS` | `10` | Main render loop FPS |
+| `LOOP_FPS` | `8` | Main render loop FPS |
 | `INSTALL_FPS` | `2` | Install screen update FPS |
 | `ANIM_FPS` | `30` | Opening animation FPS |
+| `DASH_WAVE_CYCLES_PER_SEC` | `0.35` | Dashboard sine-wave animation speed in cycles per second |
+| `DASH_WAVE_AMPLITUDE_PX` | `6.0` | Dashboard sine-wave vertical amplitude in pixels |
+| `DASH_WAVE_BASE_Y` | `269.0` | Dashboard sine-wave baseline Y position |
+| `DASH_WAVE_THICKNESS_PX` | `2` | Dashboard sine-wave stroke thickness in pixels |
 | `HIGH_TASK_INTERVAL` | `1s` | CPU/temperature update interval |
 | `MEDIUM_TASK_INTERVAL` | `10s` | RAM/swap update interval |
 | `LOW_TASK_INTERVAL` | `30s` | Disk/IP update interval |
