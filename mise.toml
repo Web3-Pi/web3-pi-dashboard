@@ -1,4 +1,5 @@
 [tools]
+cargo-binstall = "latest"
 zig = "latest"
 "cargo:cargo-zigbuild" = "latest"
 
