@@ -88,15 +88,17 @@ pub async fn influx_loop(state: SharedState, cfg: InfluxConfig) -> Result<()> {
 
         match res {
             Ok((exec, node, cons)) => {
-                let mut guard = state.write().await;
-                if let Some(v) = exec {
-                    guard.chain.exec_percent = v;
-                }
-                if let Some(v) = node {
-                    guard.chain.node_percent = v;
-                }
-                if let Some(v) = cons {
-                    guard.chain.cons_percent = v;
+                {
+                    let mut guard = state.write().await;
+                    if let Some(v) = exec {
+                        guard.chain.exec_percent = v;
+                    }
+                    if let Some(v) = node {
+                        guard.chain.node_percent = v;
+                    }
+                    if let Some(v) = cons {
+                        guard.chain.cons_percent = v;
+                    }
                 }
                 backoff_pow = 0;
                 time::sleep(INFLUX_FETCH_INTERVAL).await;

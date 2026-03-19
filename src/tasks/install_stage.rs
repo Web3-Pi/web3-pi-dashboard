@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::Deserialize;
 use std::time::Instant;
-use tokio::time;
+use tokio::{task, time};
 use tracing::{info, warn};
 
 use crate::app::{
@@ -158,6 +158,7 @@ pub async fn install_stage_loop(state: SharedState) -> Result<()> {
                 }
             }
         }
+        task::yield_now().await;
     }
 }
 
