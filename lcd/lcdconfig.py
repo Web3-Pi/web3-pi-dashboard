@@ -31,9 +31,8 @@ import time
 import spidev
 import logging
 import numpy as np
-from gpiozero import DigitalOutputDevice, PWMOutputDevice, DigitalInputDevice
-from gpiozero.pins.lgpio import LGPIOFactory
-factory = LGPIOFactory()
+import gpiod
+from gpiod.line import Direction, Value
 
 class RaspberryPi:
     def __init__(self, spi=spidev.SpiDev(0, 0), spi_freq=40000000, rst=27, dc=25, bl=18, bl_freq=1000, i2c=None,
@@ -44,6 +43,16 @@ class RaspberryPi:
 
         self.SPEED = spi_freq
         self.BL_freq = bl_freq
+
+        self.req = gpiod.request_lines(
+            "/dev/gpiochip0",
+            consumer="LCD",
+            config={
+                rst: gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.ACTIVE),
+                dc:  gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.INACTIVE),
+                bl:  gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.INACTIVE)
+            }
+        )
 
         self.RST_PIN = self.gpio_mode(rst, self.OUTPUT)
         self.DC_PIN = self.gpio_mode(dc, self.OUTPUT)
@@ -57,35 +66,33 @@ class RaspberryPi:
             self.SPI.mode = 0b00
 
     def gpio_mode(self, Pin, Mode, pull_up=None, active_state=True):
-        if Mode:
-            return DigitalOutputDevice(Pin, active_high=True, initial_value=False, pin_factory=factory)
-        else:
-            return DigitalInputDevice(Pin, pull_up=pull_up, active_state=active_state, pin_factory=factory)
+        return Pin
 
     def digital_write(self, Pin, value):
-        if value:
-            Pin.on()
-        else:
-            Pin.off()
+        val = Value.ACTIVE if value else Value.INACTIVE
+        self.req.set_value(Pin, val)
 
     def digital_read(self, Pin):
-        return Pin.value
+        return self.req.get_value(Pin) == Value.ACTIVE
 
     def delay_ms(self, delaytime):
         time.sleep(delaytime / 1000.0)
 
     def gpio_pwm(self, Pin):
-        return PWMOutputDevice(Pin, frequency=self.BL_freq, pin_factory=factory)
+        return Pin
 
     def spi_writebyte(self, data):
         if self.SPI != None:
             self.SPI.writebytes(data)
 
     def bl_DutyCycle(self, duty):
-        self.BL_PIN.value = duty / 100
+        if duty > 0:
+            self.digital_write(self.BL_PIN, 1)
+        else:
+            self.digital_write(self.BL_PIN, 0)
 
-    def bl_Frequency(self, freq):  # Hz
-        self.BL_PIN.frequency = freq
+    def bl_Frequency(self, freq):
+        pass
 
     def module_init(self):
         if self.SPI != None:
@@ -101,16 +108,7 @@ class RaspberryPi:
         logging.debug("gpio cleanup...")
         self.digital_write(self.RST_PIN, 1)
         self.digital_write(self.DC_PIN, 0)
-        self.BL_PIN.close()
+        self.req.release()
         time.sleep(0.001)
-
-
-'''
-if os.path.exists('/sys/bus/platform/drivers/gpiomem-bcm2835'):
-    implementation = RaspberryPi()
-
-for func in [x for x in dir(implementation) if not x.startswith('_')]:
-    setattr(sys.modules[__name__], func, getattr(implementation, func))
-'''
 
 ### END OF FILE ###
