@@ -53,19 +53,22 @@ sudo apt-get install git
 git clone https://github.com/Web3-Pi/web3-pi-dashboard.git
 ```
 
-Then, you can run the program as a service. The program will start automatically with the system startup.
-
-Alternatively, you can run it once. The program will stop when you close the console.
+The dashboard runs from a **prebuilt** aarch64 binary — there is no on-device
+compilation. Build it off-device with `mise run build-aarch64` (see
+[Build with mise](#build-with-mise)) or drop a release binary named `w3p-hwm`
+next to the scripts.
 
 ### Run as a service - (recommended)   
 
 ```shell
 cd web3-pi-dashboard
-chmod +x create_service.sh
 sudo ./create_service.sh
 ```
 
-To **stop** the program, execute `sudo systemctl stop w3p_hwm.service`
+This installs the binary to `/usr/local/bin/w3p-hwm`, the assets to
+`/usr/local/share/w3p-hwm/` and enables the `w3p-hwm.service` systemd unit.
+
+To **stop** the program, execute `sudo systemctl stop w3p-hwm.service`
 
 To **uninstall** the service, execute `sudo ./remove_service.sh`
 
@@ -77,10 +80,57 @@ Note: Do not use both methods simultaneously.
 
 ```shell
 cd web3-pi-dashboard
-chmod +x run.sh
 ./run.sh
 ```
 To stop the program, press Ctrl+C.
+
+## Web3 Pi vOS
+
+Notes for running the dashboard on Web3 Pi vOS.
+
+### Wiring
+
+Identical to the diagram above: display on SPI0 CE0 (`/dev/spidev0.0`),
+GPIO lines (BCM numbering): `DC=25`, `RST=27`, `BL=18`. The GPIO chip is
+resolved by its label `pinctrl-rp1` (override with `W3P_GPIOCHIP`).
+
+### 1. Enable SPI
+
+SPI is **disabled by default** on vOS. Either run:
+
+```shell
+sudo ./scripts/enable-spi.sh
+```
+
+or add `dtparam=spi=on` to `/boot/firmware/config.txt` (e.g. via the control
+panel's *Edit Boot Config*), then reboot.
+
+### 2. Install
+
+Place the prebuilt `w3p-hwm` binary next to `create_service.sh` (or build into
+`target/aarch64-unknown-linux-gnu/release/`), then:
+
+```shell
+sudo ./create_service.sh
+```
+
+### Environment variables
+
+The service works out of the box; behaviour can be tuned with the `W3P_*`
+environment variables documented in [docs/Configuration.md](docs/Configuration.md)
+(GPIO chip, geth RPC / beacon REST endpoints, systemd unit names, poll
+interval, asset dir, install-status path, mock display).
+
+### What the tiles mean on vOS
+
+| Tile | Source | States |
+|---|---|---|
+| EXEC | `geth.service` + geth JSON-RPC | `inactive` (red): unit not active. `waiting` (yellow): unit active but RPC unreachable, or 0 peers. `syncing` (orange): sync in progress, or head older than 90 s (geth reports "synced" even when offline). `synced` (green): fresh head, ≥1 peer. |
+| NODE | aggregate | Worst of EXEC and CONS. |
+| CONS | `nimbus-beacon-node.service` + beacon REST | Same states; `syncing` while sync distance > 2 slots. |
+
+The validator (`nimbus-validator.service`) is **not** shown: it is
+manual-start after LUKS unlock, so `inactive` is normal for it.
 
 ## Build with mise
 
@@ -118,7 +168,7 @@ pub const SHOW_PER_CORE: bool = false;
 ```
 note: Restart the service after making changes.   
 ```shell
-sudo systemctl restart w3p_hwm.service
+sudo systemctl restart w3p-hwm.service
 ```
 
 For full runtime/configuration values, see [docs/Configuration.md](docs/Configuration.md).
