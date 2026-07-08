@@ -1,27 +1,27 @@
 #!/bin/bash
+# Remove the w3p-hwm service (and the legacy w3p_hwm one, if present).
+set -euo pipefail
 
-# Check if the script is run with sudo
-if [ "$(id -u)" -ne 0 ]; then
+if [[ $EUID -ne 0 ]]; then
     echo "This script must be run with sudo."
     exit 1
 fi
 
-SERVICE_NAME="w3p_hwm"
-SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
+removed=0
+for name in w3p-hwm w3p_hwm; do
+    service_file="/etc/systemd/system/$name.service"
+    if [[ -f "$service_file" ]]; then
+        systemctl stop "$name.service" 2>/dev/null || true
+        systemctl disable "$name.service" 2>/dev/null || true
+        rm -f "$service_file"
+        echo "Service $name removed."
+        removed=1
+    fi
+done
 
-# Stop and disable the service
-if systemctl list-units --full -all | grep -Fq "$SERVICE_NAME.service"; then
-    systemctl stop $SERVICE_NAME
-    systemctl disable $SERVICE_NAME
-else
-    echo "Service $SERVICE_NAME does not exist."
+if [[ $removed -eq 0 ]]; then
+    echo "No w3p-hwm/w3p_hwm service found."
     exit 1
 fi
 
-# Remove the service file
-rm -f $SERVICE_FILE
-
-# Reload systemd manager configuration
 systemctl daemon-reload
-
-echo "Service $SERVICE_NAME removed successfully."

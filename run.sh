@@ -1,36 +1,22 @@
 #!/bin/bash
+# Thin dev-runner: executes the prebuilt binary with assets from this directory.
+# No on-device compilation; build off-device with: mise run build-aarch64
+set -euo pipefail
 
-echo "The script you are running has:"
-echo "basename: [$(basename "$0")]"
-echo "dirname : [$(dirname "$0")]"
-echo "pwd     : [$(pwd)]"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-DIRNAME="$(dirname "$0")"
-APPLICATION="w3p-hwm"
-TARGET="aarch64-unknown-linux-gnu"
-BINARY_PATH="./target/$TARGET/release/$APPLICATION"
-
-cd $DIRNAME
-
-# Check if Cargo.toml exists
-if [ ! -f "Cargo.toml" ]; then
-    echo "Cargo.toml not found in the current directory."
+BIN=""
+for candidate in "$SCRIPT_DIR/w3p-hwm" "$SCRIPT_DIR/target/aarch64-unknown-linux-gnu/release/w3p-hwm"; do
+    if [[ -f "$candidate" ]]; then
+        BIN="$candidate"
+        break
+    fi
+done
+if [[ -z "$BIN" ]]; then
+    echo "Prebuilt binary not found (looked for ./w3p-hwm and target/aarch64-unknown-linux-gnu/release/w3p-hwm)."
+    echo "Build it off-device with: mise run build-aarch64"
     exit 1
 fi
 
-if ! command -v mise >/dev/null 2>&1; then
-    echo "mise is required but not found in PATH."
-    exit 1
-fi
-
-echo "Building Rust application..."
-mise run build-aarch64 || exit 1
-
-echo "Running application $APPLICATION..."
-if [ ! -f "$BINARY_PATH" ]; then
-    echo "Expected binary not found: $BINARY_PATH"
-    exit 1
-fi
-$BINARY_PATH
-
-echo 0
+export W3P_ASSET_DIR="$SCRIPT_DIR"
+exec "$BIN"
