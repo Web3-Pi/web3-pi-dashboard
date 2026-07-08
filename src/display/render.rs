@@ -328,23 +328,23 @@ impl Renderer {
     /// Measured with JetBrainsMono-Medium.ttf: widest service word
     /// "starting"/"inactive" = 70 px at xs(18); sync words <= 54 px and
     /// "888 peers" = 70 px at xxs(16) — all within the 80 px tile. Line
-    /// centers 50/65/80 keep ink (12/11/11 px tall) above the y=93 divider.
+    /// centers 44/59/74 keep ink (12/11/11 px tall) above the y=93 divider.
     fn client_tile(&self, img: &mut RgbImage, x: i32, header: &str, client: &ClientState) {
         let secondary = hex(config::COLOR_TEXT_SECONDARY);
         self.center_text(img, x, 18, header, self.fontset.m, secondary);
         self.center_text(
             img,
             x,
-            50,
+            44,
             client.service.as_label(),
             self.fontset.xs,
             Rgb(client.service.as_color()),
         );
         if let Some(sync) = client.sync {
-            self.center_text(img, x, 65, sync.as_label(), self.fontset.xxs, Rgb(sync.as_color()));
+            self.center_text(img, x, 59, sync.as_label(), self.fontset.xxs, Rgb(sync.as_color()));
         }
         if let Some(peers) = client.peers {
-            self.center_text(img, x, 80, &format_peers(peers), self.fontset.xxs, secondary);
+            self.center_text(img, x, 74, &format_peers(peers), self.fontset.xxs, secondary);
         }
     }
 
