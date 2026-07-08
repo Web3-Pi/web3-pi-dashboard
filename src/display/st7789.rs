@@ -1,9 +1,14 @@
-use std::{path::Path, thread, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    thread,
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
+use gpiocdev::{line::Value, request::Request};
 use image::RgbImage;
-use rppal::gpio::{Gpio, OutputPin};
 use spidev::{SpiModeFlags, Spidev, SpidevOptions, SpidevTransfer};
+use tracing::info;
 
 use crate::app::config;
 
@@ -15,11 +20,52 @@ pub trait DisplayBackend {
     fn show_region(&mut self, image: &RgbImage, x: u16, y: u16, width: u16, height: u16) -> Result<()>;
 }
 
+const GPIO_CONSUMER: &str = "w3p-hwm";
+const GPIOCHIP_LABEL_PREFIX: &str = "pinctrl-rp1";
+const GPIOCHIP_FALLBACK: &str = "/dev/gpiochip0";
+
+fn chip_label(path: &Path) -> Option<String> {
+    let chip = gpiocdev::Chip::from_path(path).ok()?;
+    chip.info().ok().map(|info| info.label)
+}
+
+/// Resolve the GPIO character device for the Pi header bank.
+///
+/// Order: `W3P_GPIOCHIP` env override (path or chip number), then the chip
+/// labelled `pinctrl-rp1` (Pi 5 header bank; index moves across kernels but
+/// the label is stable), then literal `/dev/gpiochip0`.
+fn resolve_gpiochip() -> PathBuf {
+    if let Ok(over) = std::env::var("W3P_GPIOCHIP") {
+        let over = over.trim().to_owned();
+        let path = if over.chars().all(|c| c.is_ascii_digit()) && !over.is_empty() {
+            PathBuf::from(format!("/dev/gpiochip{over}"))
+        } else {
+            PathBuf::from(over)
+        };
+        info!(path = %path.display(), "GPIO chip overridden via W3P_GPIOCHIP");
+        return path;
+    }
+    if let Ok(chips) = gpiocdev::chip::chips() {
+        for path in chips {
+            if let Some(label) = chip_label(&path)
+                && label.starts_with(GPIOCHIP_LABEL_PREFIX)
+            {
+                info!(path = %path.display(), label, "Resolved GPIO chip by label");
+                return path;
+            }
+        }
+    }
+    info!(
+        path = GPIOCHIP_FALLBACK,
+        label = chip_label(Path::new(GPIOCHIP_FALLBACK)).as_deref().unwrap_or("<unknown>"),
+        "No '{GPIOCHIP_LABEL_PREFIX}' chip found, falling back"
+    );
+    PathBuf::from(GPIOCHIP_FALLBACK)
+}
+
 pub struct St7789Display {
     spi: Spidev,
-    dc: OutputPin,
-    rst: OutputPin,
-    bl: OutputPin,
+    gpio: Request,
     width: u16,
     height: u16,
 }
@@ -35,31 +81,56 @@ impl St7789Display {
             .build();
         spi.configure(&options)?;
 
-        let gpio = Gpio::new().context("initialize GPIO")?;
-        let dc = gpio.get(config::PIN_DC)?.into_output_low();
-        let rst = gpio.get(config::PIN_RST)?.into_output_high();
-        let bl = gpio.get(config::PIN_BL)?.into_output_low();
+        let chip_path = resolve_gpiochip();
+        // Plain active-high outputs; initial values match the previous rppal init:
+        // RST high (panel out of reset), DC low (command), BL low (backlight off).
+        let gpio = Request::builder()
+            .on_chip(&chip_path)
+            .with_consumer(GPIO_CONSUMER)
+            .with_line(u32::from(config::PIN_DC))
+            .as_output(Value::Inactive)
+            .with_line(u32::from(config::PIN_RST))
+            .as_output(Value::Active)
+            .with_line(u32::from(config::PIN_BL))
+            .as_output(Value::Inactive)
+            .request()
+            .with_context(|| format!("request GPIO lines on {}", chip_path.display()))?;
         Ok(Self {
             spi,
-            dc,
-            rst,
-            bl,
+            gpio,
             width: config::ST7789_WIDTH,
             height: config::ST7789_HEIGHT,
         })
     }
 
-    fn reset(&mut self) {
-        self.rst.set_high();
+    fn set_line(&mut self, pin: u8, high: bool) -> Result<()> {
+        let value = if high { Value::Active } else { Value::Inactive };
+        self.gpio
+            .set_value(u32::from(pin), value)
+            .with_context(|| format!("set GPIO line {pin}"))?;
+        Ok(())
+    }
+
+    fn set_dc(&mut self, high: bool) -> Result<()> {
+        self.set_line(config::PIN_DC, high)
+    }
+
+    fn set_rst(&mut self, high: bool) -> Result<()> {
+        self.set_line(config::PIN_RST, high)
+    }
+
+    fn reset(&mut self) -> Result<()> {
+        self.set_rst(true)?;
         thread::sleep(Duration::from_millis(10));
-        self.rst.set_low();
+        self.set_rst(false)?;
         thread::sleep(Duration::from_millis(10));
-        self.rst.set_high();
+        self.set_rst(true)?;
         thread::sleep(Duration::from_millis(10));
+        Ok(())
     }
 
     fn write_cmd(&mut self, cmd: u8) -> Result<()> {
-        self.dc.set_low();
+        self.set_dc(false)?;
         let tx = [cmd];
         let mut rx = [0_u8; 1];
         self.spi
@@ -68,7 +139,7 @@ impl St7789Display {
     }
 
     fn write_data(&mut self, data: &[u8]) -> Result<()> {
-        self.dc.set_high();
+        self.set_dc(true)?;
         self.spi.write_all(data)?;
         Ok(())
     }
@@ -126,14 +197,14 @@ impl St7789Display {
 
 impl DisplayBackend for St7789Display {
     fn init(&mut self) -> Result<()> {
-        self.reset();
+        self.reset()?;
         self.init_sequence()
     }
 
     fn clear(&mut self) -> Result<()> {
         let px = vec![0xFF_u8; self.width as usize * self.height as usize * 2];
         self.set_window(0, 0, self.width - 1, self.height - 1)?;
-        self.dc.set_high();
+        self.set_dc(true)?;
         for chunk in px.chunks(4096) {
             self.spi.write_all(chunk)?;
         }
@@ -141,12 +212,7 @@ impl DisplayBackend for St7789Display {
     }
 
     fn set_backlight(&mut self, duty_percent: u8) -> Result<()> {
-        if duty_percent > 0 {
-            self.bl.set_high();
-        } else {
-            self.bl.set_low();
-        }
-        Ok(())
+        self.set_line(config::PIN_BL, duty_percent > 0)
     }
 
     fn show_image(&mut self, image: &RgbImage) -> Result<()> {
@@ -188,7 +254,7 @@ impl DisplayBackend for St7789Display {
         self.write_cmd(0x36)?;
         self.write_data(&[0x00])?;
         self.set_window(x, y, xe, ye)?;
-        self.dc.set_high();
+        self.set_dc(true)?;
         for chunk in buf.chunks(4096) {
             self.spi.write_all(chunk)?;
         }

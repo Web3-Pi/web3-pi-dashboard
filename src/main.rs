@@ -62,12 +62,18 @@ fn diff_bbox(prev: &RgbImage, curr: &RgbImage) -> Option<(u16, u16, u16, u16)> {
     ))
 }
 
+fn mock_display_requested() -> bool {
+    std::env::var("W3P_MOCK_DISPLAY").is_ok_and(|v| v == "1")
+}
+
 async fn preflight_checks() -> Result<()> {
     if !platform::checks::is_raspberry_pi() {
-        anyhow::bail!("Only Raspberry Pi is supported");
+        anyhow::bail!("Only Raspberry Pi is supported (set W3P_MOCK_DISPLAY=1 for desktop development)");
     }
     if !platform::checks::is_spi_enabled() && !platform::checks::is_spi_enabled_config() {
-        anyhow::bail!("SPI is not enabled");
+        anyhow::bail!(
+            "SPI disabled — add 'dtparam=spi=on' to /boot/firmware/config.txt ([all] section) and reboot (see scripts/enable-spi.sh)"
+        );
     }
     Ok(())
 }
@@ -232,16 +238,23 @@ async fn main() -> Result<()> {
         "Runtime install-status diagnostics"
     );
 
-    preflight_checks().await?;
+    if !mock_display_requested() {
+        preflight_checks().await?;
+    }
 
     let state: SharedState = Arc::new(RwLock::new(AppState::default()));
     let renderer = Renderer::load()?;
 
-    let mut display: Box<dyn DisplayBackend> = match St7789Display::new() {
-        Ok(d) => Box::new(d),
-        Err(err) => {
-            warn!("Hardware display unavailable, using mock: {err}");
-            Box::new(MockDisplay::new())
+    let mut display: Box<dyn DisplayBackend> = if mock_display_requested() {
+        info!("W3P_MOCK_DISPLAY=1 set, using mock display");
+        Box::new(MockDisplay::new())
+    } else {
+        match St7789Display::new() {
+            Ok(d) => Box::new(d),
+            Err(err) => {
+                error!("Hardware display init failed: {err:#}");
+                return Err(err.context("hardware display init (set W3P_MOCK_DISPLAY=1 for a mock display)"));
+            }
         }
     };
 

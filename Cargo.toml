@@ -20,9 +20,7 @@ imageproc = { version = "0.25", default-features = false }
 ab_glyph = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 spidev = "0.7"
-rppal = "0.22"
-linux-embedded-hal = "0.4"
-embedded-hal = "1.0"
+gpiocdev = "0.8"
 
 [profile.release]
 lto = true
