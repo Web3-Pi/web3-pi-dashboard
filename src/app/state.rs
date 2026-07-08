@@ -12,14 +12,20 @@ pub enum SyncStatus {
 }
 
 impl SyncStatus {
-    pub fn from_percent(value: i32) -> Self {
-        match value {
-            0..=25 => Self::Inactive,
-            26..=45 => Self::Waiting,
-            46..=76 => Self::Syncing,
-            77..=100 => Self::Synced,
-            _ => Self::Unknown,
+    /// Severity ordering used for the aggregate NODE tile:
+    /// Unknown > Inactive > Waiting > Syncing > Synced.
+    fn severity(self) -> u8 {
+        match self {
+            Self::Unknown => 4,
+            Self::Inactive => 3,
+            Self::Waiting => 2,
+            Self::Syncing => 1,
+            Self::Synced => 0,
         }
+    }
+
+    pub fn worst_of(self, other: Self) -> Self {
+        if self.severity() >= other.severity() { self } else { other }
     }
 
     pub fn as_label(self) -> &'static str {
@@ -79,9 +85,9 @@ pub struct SystemState {
 
 #[derive(Debug, Clone)]
 pub struct ChainState {
-    pub exec_percent: i32,
-    pub node_percent: i32,
-    pub cons_percent: i32,
+    pub exec: SyncStatus,
+    pub node: SyncStatus,
+    pub cons: SyncStatus,
 }
 
 #[derive(Debug, Clone)]
@@ -125,9 +131,9 @@ impl Default for AppState {
                 hostname: "unknown".to_owned(),
             },
             chain: ChainState {
-                exec_percent: 0,
-                node_percent: 0,
-                cons_percent: 0,
+                exec: SyncStatus::Unknown,
+                node: SyncStatus::Unknown,
+                cons: SyncStatus::Unknown,
             },
             install: InstallState {
                 stage: InstallStage::Unknown,

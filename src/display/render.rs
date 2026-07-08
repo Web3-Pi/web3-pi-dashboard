@@ -12,7 +12,7 @@ use imageproc::drawing::{draw_line_segment_mut, draw_text_mut, text_size};
 
 use crate::app::{
     config,
-    state::{AppState, InstallStage, SyncStatus},
+    state::{AppState, InstallStage},
 };
 
 pub struct FontSet {
@@ -207,13 +207,13 @@ impl Renderer {
         );
 
         self.center_text(&mut img, 40, 18, "EXEC", self.fontset.m, secondary);
-        let exec_s = SyncStatus::from_percent(state.chain.exec_percent);
+        let exec_s = state.chain.exec;
         self.center_text(&mut img, 40, 50, exec_s.as_label(), self.fontset.xs, Rgb(exec_s.as_color()));
         self.center_text(&mut img, 120, 18, "NODE", self.fontset.m, secondary);
-        let node_s = SyncStatus::from_percent(state.chain.node_percent);
+        let node_s = state.chain.node;
         self.center_text(&mut img, 120, 50, node_s.as_label(), self.fontset.xs, Rgb(node_s.as_color()));
         self.center_text(&mut img, 200, 18, "CONS", self.fontset.m, secondary);
-        let cons_s = SyncStatus::from_percent(state.chain.cons_percent);
+        let cons_s = state.chain.cons;
         self.center_text(&mut img, 200, 50, cons_s.as_label(), self.fontset.xs, Rgb(cons_s.as_color()));
 
         self.center_text(&mut img, 200, 108, "RAM", self.fontset.m, secondary);

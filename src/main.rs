@@ -7,7 +7,7 @@ use std::{sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
 use app::{
-    config::{self, InfluxConfig},
+    config::{self, EthStatusConfig},
     state::{AppState, InstallStage, SharedState},
 };
 use display::{
@@ -270,13 +270,13 @@ async fn main() -> Result<()> {
         Renderer::create_opening_flag();
     }
 
-    let influx_cfg = InfluxConfig::from_env();
+    let eth_cfg = EthStatusConfig::from_env();
     let mut set = JoinSet::new();
     set.spawn(tasks::system_metrics::high_frequency_loop(state.clone()));
     set.spawn(tasks::system_metrics::medium_frequency_loop(state.clone()));
     set.spawn(tasks::system_metrics::low_frequency_loop(state.clone()));
     set.spawn(tasks::install_stage::install_stage_loop(state.clone()));
-    set.spawn(tasks::influx::influx_loop(state.clone(), influx_cfg));
+    set.spawn(tasks::eth_status::eth_status_loop(state.clone(), eth_cfg));
 
     {
         let render_future = render_loop(display.as_mut(), &renderer, state.clone());

@@ -144,21 +144,6 @@ mod tests {
 
     use crate::app::config::{HIGH_TASK_INTERVAL, LOW_TASK_INTERVAL, MEDIUM_TASK_INTERVAL};
 
-    use crate::app::state::SyncStatus;
-
-    #[test]
-    fn map_sync_status_boundaries() {
-        assert_eq!(SyncStatus::from_percent(0), SyncStatus::Inactive);
-        assert_eq!(SyncStatus::from_percent(25), SyncStatus::Inactive);
-        assert_eq!(SyncStatus::from_percent(26), SyncStatus::Waiting);
-        assert_eq!(SyncStatus::from_percent(45), SyncStatus::Waiting);
-        assert_eq!(SyncStatus::from_percent(46), SyncStatus::Syncing);
-        assert_eq!(SyncStatus::from_percent(76), SyncStatus::Syncing);
-        assert_eq!(SyncStatus::from_percent(77), SyncStatus::Synced);
-        assert_eq!(SyncStatus::from_percent(100), SyncStatus::Synced);
-        assert_eq!(SyncStatus::from_percent(101), SyncStatus::Unknown);
-    }
-
     #[test]
     fn intervals_are_positive() {
         assert!(HIGH_TASK_INTERVAL > Duration::ZERO);

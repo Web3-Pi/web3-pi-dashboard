@@ -40,9 +40,8 @@ pub const LOW_TASK_INTERVAL: Duration = Duration::from_secs(30);
 pub const INSTALL_TASK_INTERVAL: Duration = Duration::from_millis(500);
 pub const INSTALL_WARN_RATE_LIMIT: Duration = Duration::from_secs(10);
 pub const INSTALL_STARTUP_GRACE_DEFAULT: Duration = Duration::from_secs(25);
-pub const INFLUX_FETCH_INTERVAL: Duration = Duration::from_secs(30);
-pub const INFLUX_RETRY_BASE_SECONDS: u64 = 10;
-pub const INFLUX_TIMEOUT_SECONDS: u64 = 3;
+pub const ETH_POLL_SECONDS_DEFAULT: u64 = 10;
+pub const ETH_HTTP_TIMEOUT_SECONDS: u64 = 3;
 
 pub fn install_startup_grace() -> Duration {
     std::env::var("W3P_INSTALL_GRACE_SECONDS")
@@ -53,30 +52,30 @@ pub fn install_startup_grace() -> Duration {
 }
 
 #[derive(Clone)]
-pub struct InfluxConfig {
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub password: String,
-    pub database: String,
+pub struct EthStatusConfig {
+    pub poll_interval: Duration,
+    pub unit_exec: String,
+    pub unit_cons: String,
+    pub geth_rpc: String,
+    pub beacon_rest: String,
 }
 
-impl InfluxConfig {
+impl EthStatusConfig {
     pub fn from_env() -> Self {
-        let host = std::env::var("W3P_INFLUX_HOST").unwrap_or_else(|_| "localhost".to_owned());
-        let port = std::env::var("W3P_INFLUX_PORT")
+        let poll_seconds = std::env::var("W3P_ETH_POLL_SECONDS")
             .ok()
-            .and_then(|v| v.parse::<u16>().ok())
-            .unwrap_or(8086);
-        let username = std::env::var("W3P_INFLUX_USERNAME").unwrap_or_else(|_| "geth".to_owned());
-        let password = std::env::var("W3P_INFLUX_PASSWORD").unwrap_or_else(|_| "geth".to_owned());
-        let database = std::env::var("W3P_INFLUX_DATABASE").unwrap_or_else(|_| "ethonrpi".to_owned());
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(ETH_POLL_SECONDS_DEFAULT);
         Self {
-            host,
-            port,
-            username,
-            password,
-            database,
+            poll_interval: Duration::from_secs(poll_seconds),
+            unit_exec: std::env::var("W3P_UNIT_EXEC").unwrap_or_else(|_| "geth.service".to_owned()),
+            unit_cons: std::env::var("W3P_UNIT_CONS")
+                .unwrap_or_else(|_| "nimbus-beacon-node.service".to_owned()),
+            geth_rpc: std::env::var("W3P_GETH_RPC")
+                .unwrap_or_else(|_| "http://127.0.0.1:8545".to_owned()),
+            beacon_rest: std::env::var("W3P_BEACON_REST")
+                .unwrap_or_else(|_| "http://127.0.0.1:5052".to_owned()),
         }
     }
 }
