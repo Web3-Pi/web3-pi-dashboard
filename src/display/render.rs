@@ -199,10 +199,10 @@ impl Renderer {
         );
         self.center_text(
             &mut img,
-            42,
+            40,
             170,
-            &format!("{:.2}TB", state.system.disk_used_tb),
-            self.fontset.s,
+            &format!("{:.1}T used", state.system.disk_used_tb),
+            self.fontset.xs,
             secondary,
         );
 
