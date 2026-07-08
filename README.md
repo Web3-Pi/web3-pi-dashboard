@@ -134,8 +134,10 @@ The top row shows one tile per Ethereum client, each with up to three lines:
 **Line 1 — systemd service state** (`systemctl is-active`):
 `running` (green), `starting` (yellow, activating/reloading), `stopped`
 (gray, inactive — deliberately not red: a stopped validator is normal unless
-you are staking), `failed` (red), `unknown` (gray, unit missing or
-`systemctl` unavailable).
+you are staking), `failed` (red), `unknown` (gray, shown until the first
+successful `systemctl` poll or for unrecognized states; if `systemctl` fails
+mid-run the last known states are kept. Note: a missing or misspelled unit
+name reports `inactive` and therefore shows as `stopped`).
 
 **Line 2 — sync state** (only while the service is running):
 `synced` (green), `syncing` (orange — sync in progress, or head older than
