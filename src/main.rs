@@ -179,37 +179,6 @@ async fn render_loop<D: DisplayBackend + ?Sized>(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use image::{ImageBuffer, Rgb};
-
-    use super::diff_bbox;
-
-    #[test]
-    fn diff_bbox_none_when_equal() {
-        let a = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
-        let b = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
-        assert_eq!(diff_bbox(&a, &b), None);
-    }
-
-    #[test]
-    fn diff_bbox_single_pixel() {
-        let a = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
-        let mut b = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
-        b.put_pixel(2, 1, Rgb([1, 2, 3]));
-        assert_eq!(diff_bbox(&a, &b), Some((2, 1, 1, 1)));
-    }
-
-    #[test]
-    fn diff_bbox_multi_pixel_bounds() {
-        let a = ImageBuffer::from_pixel(6, 5, Rgb([0, 0, 0]));
-        let mut b = ImageBuffer::from_pixel(6, 5, Rgb([0, 0, 0]));
-        b.put_pixel(1, 2, Rgb([1, 2, 3]));
-        b.put_pixel(4, 4, Rgb([4, 5, 6]));
-        assert_eq!(diff_bbox(&a, &b), Some((1, 2, 4, 3)));
-    }
-}
-
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
@@ -314,4 +283,35 @@ async fn main() -> Result<()> {
     display_final_screen(display.as_mut()).await;
     info!("Hardware Monitor End");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use image::{ImageBuffer, Rgb};
+
+    use super::diff_bbox;
+
+    #[test]
+    fn diff_bbox_none_when_equal() {
+        let a = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
+        let b = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
+        assert_eq!(diff_bbox(&a, &b), None);
+    }
+
+    #[test]
+    fn diff_bbox_single_pixel() {
+        let a = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
+        let mut b = ImageBuffer::from_pixel(4, 3, Rgb([0, 0, 0]));
+        b.put_pixel(2, 1, Rgb([1, 2, 3]));
+        assert_eq!(diff_bbox(&a, &b), Some((2, 1, 1, 1)));
+    }
+
+    #[test]
+    fn diff_bbox_multi_pixel_bounds() {
+        let a = ImageBuffer::from_pixel(6, 5, Rgb([0, 0, 0]));
+        let mut b = ImageBuffer::from_pixel(6, 5, Rgb([0, 0, 0]));
+        b.put_pixel(1, 2, Rgb([1, 2, 3]));
+        b.put_pixel(4, 4, Rgb([4, 5, 6]));
+        assert_eq!(diff_bbox(&a, &b), Some((1, 2, 4, 3)));
+    }
 }
