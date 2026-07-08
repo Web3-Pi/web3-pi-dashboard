@@ -2,49 +2,94 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
+/// systemd service state shown as the primary tile line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SyncStatus {
-    Inactive,
-    Waiting,
-    Syncing,
-    Synced,
+pub enum ServiceState {
+    Running,
+    Starting,
+    Stopped,
+    Failed,
     Unknown,
 }
 
-impl SyncStatus {
-    /// Severity ordering used for the aggregate NODE tile:
-    /// Unknown > Inactive > Waiting > Syncing > Synced.
-    fn severity(self) -> u8 {
-        match self {
-            Self::Unknown => 4,
-            Self::Inactive => 3,
-            Self::Waiting => 2,
-            Self::Syncing => 1,
-            Self::Synced => 0,
+impl ServiceState {
+    /// Maps one `systemctl is-active` output line.
+    pub fn from_systemctl(raw: &str) -> Self {
+        match raw.trim() {
+            "active" => Self::Running,
+            "activating" | "reloading" => Self::Starting,
+            "inactive" | "deactivating" => Self::Stopped,
+            "failed" => Self::Failed,
+            _ => Self::Unknown,
         }
-    }
-
-    pub fn worst_of(self, other: Self) -> Self {
-        if self.severity() >= other.severity() { self } else { other }
     }
 
     pub fn as_label(self) -> &'static str {
         match self {
-            Self::Inactive => "inactive",
-            Self::Waiting => "waiting",
-            Self::Syncing => "syncing",
-            Self::Synced => "synced",
+            Self::Running => "running",
+            Self::Starting => "starting",
+            Self::Stopped => "stopped",
+            Self::Failed => "failed",
             Self::Unknown => "unknown",
         }
     }
 
     pub fn as_color(self) -> [u8; 3] {
         match self {
-            Self::Inactive => [255, 0, 0],
-            Self::Waiting => [255, 255, 0],
-            Self::Syncing => [255, 165, 0],
+            Self::Running => [0, 255, 0],
+            Self::Starting => [255, 255, 0],
+            // Neutral light gray, not red: a stopped unit is normal
+            // (e.g. the validator on non-staking nodes).
+            Self::Stopped => [190, 190, 190],
+            Self::Failed => [255, 0, 0],
+            Self::Unknown => [128, 128, 128],
+        }
+    }
+}
+
+/// Chain sync state shown below the service state while it is running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncState {
+    Synced,
+    Syncing,
+    /// Service running but its API is unreachable.
+    NoApi,
+}
+
+impl SyncState {
+    pub fn as_label(self) -> &'static str {
+        match self {
+            Self::Synced => "synced",
+            Self::Syncing => "syncing",
+            Self::NoApi => "no api",
+        }
+    }
+
+    pub fn as_color(self) -> [u8; 3] {
+        match self {
             Self::Synced => [0, 255, 0],
-            Self::Unknown => [255, 255, 255],
+            Self::Syncing => [255, 165, 0],
+            Self::NoApi => [255, 255, 0],
+        }
+    }
+}
+
+/// One top-row tile (EXEC / CONS / VALI). `sync` and `peers` are populated
+/// only when the service is running and the API responded this poll cycle;
+/// VALI never has either (no sync/peers concept for the validator client).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClientState {
+    pub service: ServiceState,
+    pub sync: Option<SyncState>,
+    pub peers: Option<u64>,
+}
+
+impl ClientState {
+    pub const fn unknown() -> Self {
+        Self {
+            service: ServiceState::Unknown,
+            sync: None,
+            peers: None,
         }
     }
 }
@@ -85,9 +130,9 @@ pub struct SystemState {
 
 #[derive(Debug, Clone)]
 pub struct ChainState {
-    pub exec: SyncStatus,
-    pub node: SyncStatus,
-    pub cons: SyncStatus,
+    pub exec: ClientState,
+    pub cons: ClientState,
+    pub vali: ClientState,
 }
 
 #[derive(Debug, Clone)]
@@ -131,9 +176,9 @@ impl Default for AppState {
                 hostname: "unknown".to_owned(),
             },
             chain: ChainState {
-                exec: SyncStatus::Unknown,
-                node: SyncStatus::Unknown,
-                cons: SyncStatus::Unknown,
+                exec: ClientState::unknown(),
+                cons: ClientState::unknown(),
+                vali: ClientState::unknown(),
             },
             install: InstallState {
                 stage: InstallStage::Unknown,

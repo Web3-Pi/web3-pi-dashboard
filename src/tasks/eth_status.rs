@@ -7,7 +7,7 @@ use tracing::{debug, warn};
 
 use crate::app::{
     config::{ETH_HTTP_TIMEOUT_SECONDS, EthStatusConfig},
-    state::{SharedState, SyncStatus},
+    state::{ClientState, ServiceState, SharedState, SyncState},
 };
 
 /// Head older than this is treated as stale: geth reports `eth_syncing=false`
@@ -22,7 +22,8 @@ const SYSTEMCTL_TIMEOUT_SECONDS: u64 = 3;
 #[derive(Debug, Clone, Copy)]
 struct GethProbe {
     syncing: bool,
-    peers: u64,
+    /// None when `net_peerCount` did not respond this cycle.
+    peers: Option<u64>,
     head_timestamp: Option<u64>,
 }
 
@@ -30,7 +31,8 @@ struct GethProbe {
 struct BeaconProbe {
     is_syncing: bool,
     sync_distance: u64,
-    peers: u64,
+    /// None when `/eth/v1/node/peer_count` did not respond this cycle.
+    peers: Option<u64>,
 }
 
 fn parse_hex_u64(value: &str) -> Option<u64> {
@@ -38,21 +40,29 @@ fn parse_hex_u64(value: &str) -> Option<u64> {
     u64::from_str_radix(digits, 16).ok()
 }
 
-/// Parse `systemctl is-active <exec> <cons>` stdout: one state per line.
-/// Anything but "active" (inactive/failed/activating/unknown/...) is not active.
-fn parse_is_active_lines(stdout: &str) -> (bool, bool) {
-    let mut lines = stdout.lines().map(|l| l.trim() == "active");
-    (lines.next().unwrap_or(false), lines.next().unwrap_or(false))
+/// Parse `systemctl is-active <exec> <cons> <vali>` stdout: one state per
+/// line, in argument order. Missing lines map to Unknown.
+fn parse_is_active_lines(stdout: &str) -> [ServiceState; 3] {
+    let mut lines = stdout.lines();
+    std::array::from_fn(|_| {
+        lines
+            .next()
+            .map_or(ServiceState::Unknown, ServiceState::from_systemctl)
+    })
 }
 
-/// One systemctl spawn for both units. `systemctl is-active` exits non-zero
-/// when any unit is not active, so the exit code is deliberately ignored.
-/// Returns None when the spawn failed or timed out.
-async fn unit_states(unit_exec: &str, unit_cons: &str) -> Option<(bool, bool)> {
+/// One systemctl spawn for all three units. `systemctl is-active` exits
+/// non-zero when any unit is not active, so the exit code is deliberately
+/// ignored. Returns None when the spawn failed or timed out.
+async fn unit_states(
+    unit_exec: &str,
+    unit_cons: &str,
+    unit_vali: &str,
+) -> Option<[ServiceState; 3]> {
     let output = time::timeout(
         Duration::from_secs(SYSTEMCTL_TIMEOUT_SECONDS),
         tokio::process::Command::new("systemctl")
-            .args(["is-active", "--", unit_exec, unit_cons])
+            .args(["is-active", "--", unit_exec, unit_cons, unit_vali])
             .kill_on_drop(true)
             .output(),
     )
@@ -81,8 +91,7 @@ async fn probe_geth(client: &reqwest::Client, base: &str) -> Option<GethProbe> {
     let syncing = !matches!(syncing_result, serde_json::Value::Bool(false));
     let peers = rpc_call(client, base, "net_peerCount", serde_json::json!([]))
         .await
-        .and_then(|v| v.as_str().and_then(parse_hex_u64))
-        .unwrap_or(0);
+        .and_then(|v| v.as_str().and_then(parse_hex_u64));
     let head_timestamp = rpc_call(
         client,
         base,
@@ -134,7 +143,7 @@ async fn probe_beacon(client: &reqwest::Client, base: &str) -> Option<BeaconProb
     let response = client.get(&url).send().await.ok()?;
     let parsed: BeaconSyncingResponse = response.json().await.ok()?;
     let sync_distance = parsed.data.sync_distance.parse::<u64>().ok()?;
-    let peers = beacon_peer_count(client, base).await.unwrap_or(0);
+    let peers = beacon_peer_count(client, base).await;
     Some(BeaconProbe {
         is_syncing: parsed.data.is_syncing,
         sync_distance,
@@ -142,42 +151,46 @@ async fn probe_beacon(client: &reqwest::Client, base: &str) -> Option<BeaconProb
     })
 }
 
-fn map_exec(unit_active: bool, probe: Option<GethProbe>, now_unix: u64) -> SyncStatus {
-    if !unit_active {
-        return SyncStatus::Inactive;
+/// Sync line and peers exist only while the service is running; a running
+/// service with an unreachable API shows "no api" and no peer count.
+fn map_exec(service: ServiceState, probe: Option<GethProbe>, now_unix: u64) -> ClientState {
+    if service != ServiceState::Running {
+        return ClientState { service, sync: None, peers: None };
     }
     let Some(p) = probe else {
-        return SyncStatus::Waiting;
+        return ClientState { service, sync: Some(SyncState::NoApi), peers: None };
     };
-    if p.syncing {
-        return SyncStatus::Syncing;
-    }
+    // geth reports `eth_syncing=false` even when offline (e.g. WAN outage),
+    // so a stale/unknown head counts as still syncing.
     let head_fresh = p
         .head_timestamp
         .is_some_and(|ts| now_unix.saturating_sub(ts) <= EXEC_HEAD_MAX_AGE_SECS);
-    if !head_fresh {
-        return SyncStatus::Syncing;
-    }
-    if p.peers == 0 {
-        return SyncStatus::Waiting;
-    }
-    SyncStatus::Synced
+    let sync = if p.syncing || !head_fresh {
+        SyncState::Syncing
+    } else {
+        SyncState::Synced
+    };
+    ClientState { service, sync: Some(sync), peers: p.peers }
 }
 
-fn map_cons(unit_active: bool, probe: Option<BeaconProbe>) -> SyncStatus {
-    if !unit_active {
-        return SyncStatus::Inactive;
+fn map_cons(service: ServiceState, probe: Option<BeaconProbe>) -> ClientState {
+    if service != ServiceState::Running {
+        return ClientState { service, sync: None, peers: None };
     }
     let Some(p) = probe else {
-        return SyncStatus::Waiting;
+        return ClientState { service, sync: Some(SyncState::NoApi), peers: None };
     };
-    if p.is_syncing || p.sync_distance > CONS_MAX_SYNC_DISTANCE {
-        return SyncStatus::Syncing;
-    }
-    if p.peers == 0 {
-        return SyncStatus::Waiting;
-    }
-    SyncStatus::Synced
+    let sync = if p.is_syncing || p.sync_distance > CONS_MAX_SYNC_DISTANCE {
+        SyncState::Syncing
+    } else {
+        SyncState::Synced
+    };
+    ClientState { service, sync: Some(sync), peers: p.peers }
+}
+
+/// The validator client has no sync/peers concept — service state only.
+fn map_vali(service: ServiceState) -> ClientState {
+    ClientState { service, sync: None, peers: None }
 }
 
 fn now_unix() -> u64 {
@@ -195,15 +208,13 @@ pub async fn eth_status_loop(state: SharedState, cfg: EthStatusConfig) -> Result
     interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
     // Last-known unit states survive a failed systemctl spawn.
-    let mut exec_active = false;
-    let mut cons_active = false;
+    let mut services = [ServiceState::Unknown; 3];
     let mut spawn_failed_logged = false;
     loop {
         interval.tick().await;
-        match unit_states(&cfg.unit_exec, &cfg.unit_cons).await {
-            Some((exec, cons)) => {
-                exec_active = exec;
-                cons_active = cons;
+        match unit_states(&cfg.unit_exec, &cfg.unit_cons, &cfg.unit_vali).await {
+            Some(states) => {
+                services = states;
                 spawn_failed_logged = false;
             }
             None => {
@@ -213,19 +224,20 @@ pub async fn eth_status_loop(state: SharedState, cfg: EthStatusConfig) -> Result
                 }
             }
         }
+        let [exec_service, cons_service, vali_service] = services;
 
         // Probe both endpoints concurrently: sequentially the worst case
         // (5 stalled requests x 3s timeout) would exceed the poll interval.
         let (geth, beacon) = tokio::join!(
             async {
-                if exec_active {
+                if exec_service == ServiceState::Running {
                     probe_geth(&client, &cfg.geth_rpc).await
                 } else {
                     None
                 }
             },
             async {
-                if cons_active {
+                if cons_service == ServiceState::Running {
                     probe_beacon(&client, &cfg.beacon_rest).await
                 } else {
                     None
@@ -233,26 +245,29 @@ pub async fn eth_status_loop(state: SharedState, cfg: EthStatusConfig) -> Result
             }
         );
 
-        let exec = map_exec(exec_active, geth, now_unix());
-        let cons = map_cons(cons_active, beacon);
-        let node = exec.worst_of(cons);
-        debug!(?exec, ?cons, ?node, "eth status poll");
+        let exec = map_exec(exec_service, geth, now_unix());
+        let cons = map_cons(cons_service, beacon);
+        let vali = map_vali(vali_service);
+        debug!(?exec, ?cons, ?vali, "eth status poll");
 
         let mut guard = state.write().await;
         guard.chain.exec = exec;
         guard.chain.cons = cons;
-        guard.chain.node = node;
+        guard.chain.vali = vali;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BeaconProbe, GethProbe, map_cons, map_exec, parse_hex_u64, parse_is_active_lines};
-    use crate::app::state::SyncStatus;
+    use super::{
+        BeaconProbe, GethProbe, map_cons, map_exec, map_vali, parse_hex_u64,
+        parse_is_active_lines,
+    };
+    use crate::app::state::{ClientState, ServiceState, SyncState};
 
     const NOW: u64 = 1_700_000_000;
 
-    fn geth(syncing: bool, peers: u64, head_age: Option<u64>) -> Option<GethProbe> {
+    fn geth(syncing: bool, peers: Option<u64>, head_age: Option<u64>) -> Option<GethProbe> {
         Some(GethProbe {
             syncing,
             peers,
@@ -260,13 +275,30 @@ mod tests {
         })
     }
 
+    fn client(
+        service: ServiceState,
+        sync: Option<SyncState>,
+        peers: Option<u64>,
+    ) -> ClientState {
+        ClientState { service, sync, peers }
+    }
+
     #[test]
     fn parse_is_active_variants() {
-        assert_eq!(parse_is_active_lines("active\nactive\n"), (true, true));
-        assert_eq!(parse_is_active_lines("active\ninactive\n"), (true, false));
-        assert_eq!(parse_is_active_lines("failed\nactivating\n"), (false, false));
-        assert_eq!(parse_is_active_lines("unknown\n"), (false, false));
-        assert_eq!(parse_is_active_lines(""), (false, false));
+        use ServiceState::{Failed, Running, Starting, Stopped, Unknown};
+        assert_eq!(parse_is_active_lines("active\nactive\nactive\n"), [Running; 3]);
+        assert_eq!(
+            parse_is_active_lines("active\ninactive\nfailed\n"),
+            [Running, Stopped, Failed]
+        );
+        assert_eq!(
+            parse_is_active_lines("activating\nreloading\ndeactivating\n"),
+            [Starting, Starting, Stopped]
+        );
+        // missing lines and unrecognised states map to Unknown
+        assert_eq!(parse_is_active_lines("active\n"), [Running, Unknown, Unknown]);
+        assert_eq!(parse_is_active_lines("bogus\n"), [Unknown; 3]);
+        assert_eq!(parse_is_active_lines(""), [Unknown; 3]);
     }
 
     #[test]
@@ -279,19 +311,51 @@ mod tests {
 
     #[test]
     fn exec_mapping() {
-        assert_eq!(map_exec(false, None, NOW), SyncStatus::Inactive);
-        assert_eq!(map_exec(true, None, NOW), SyncStatus::Waiting);
-        assert_eq!(map_exec(true, geth(true, 5, Some(10)), NOW), SyncStatus::Syncing);
+        use ServiceState::{Failed, Running, Stopped};
+        // not running: no sync line, no peers — whatever the probe says
+        assert_eq!(map_exec(Stopped, None, NOW), client(Stopped, None, None));
+        assert_eq!(
+            map_exec(Failed, geth(false, Some(5), Some(10)), NOW),
+            client(Failed, None, None)
+        );
+        // running but RPC unreachable
+        assert_eq!(
+            map_exec(Running, None, NOW),
+            client(Running, Some(SyncState::NoApi), None)
+        );
+        // syncing
+        assert_eq!(
+            map_exec(Running, geth(true, Some(5), Some(10)), NOW),
+            client(Running, Some(SyncState::Syncing), Some(5))
+        );
         // "synced" but stale head (WAN outage heuristic)
-        assert_eq!(map_exec(true, geth(false, 5, Some(120)), NOW), SyncStatus::Syncing);
+        assert_eq!(
+            map_exec(Running, geth(false, Some(5), Some(120)), NOW),
+            client(Running, Some(SyncState::Syncing), Some(5))
+        );
         // "synced" but head timestamp unavailable counts as stale
-        assert_eq!(map_exec(true, geth(false, 5, None), NOW), SyncStatus::Syncing);
-        assert_eq!(map_exec(true, geth(false, 0, Some(10)), NOW), SyncStatus::Waiting);
-        assert_eq!(map_exec(true, geth(false, 5, Some(10)), NOW), SyncStatus::Synced);
+        assert_eq!(
+            map_exec(Running, geth(false, Some(5), None), NOW),
+            client(Running, Some(SyncState::Syncing), Some(5))
+        );
+        // synced; peer count passes through, including 0 and absent
+        assert_eq!(
+            map_exec(Running, geth(false, Some(5), Some(10)), NOW),
+            client(Running, Some(SyncState::Synced), Some(5))
+        );
+        assert_eq!(
+            map_exec(Running, geth(false, Some(0), Some(10)), NOW),
+            client(Running, Some(SyncState::Synced), Some(0))
+        );
+        assert_eq!(
+            map_exec(Running, geth(false, None, Some(10)), NOW),
+            client(Running, Some(SyncState::Synced), None)
+        );
     }
 
     #[test]
     fn cons_mapping() {
+        use ServiceState::{Running, Stopped};
         let probe = |is_syncing, sync_distance, peers| {
             Some(BeaconProbe {
                 is_syncing,
@@ -299,19 +363,39 @@ mod tests {
                 peers,
             })
         };
-        assert_eq!(map_cons(false, None), SyncStatus::Inactive);
-        assert_eq!(map_cons(true, None), SyncStatus::Waiting);
-        assert_eq!(map_cons(true, probe(true, 0, 5)), SyncStatus::Syncing);
-        assert_eq!(map_cons(true, probe(false, 3, 5)), SyncStatus::Syncing);
-        assert_eq!(map_cons(true, probe(false, 2, 0)), SyncStatus::Waiting);
-        assert_eq!(map_cons(true, probe(false, 2, 5)), SyncStatus::Synced);
+        assert_eq!(map_cons(Stopped, None), client(Stopped, None, None));
+        assert_eq!(
+            map_cons(Running, None),
+            client(Running, Some(SyncState::NoApi), None)
+        );
+        assert_eq!(
+            map_cons(Running, probe(true, 0, Some(5))),
+            client(Running, Some(SyncState::Syncing), Some(5))
+        );
+        assert_eq!(
+            map_cons(Running, probe(false, 3, Some(5))),
+            client(Running, Some(SyncState::Syncing), Some(5))
+        );
+        assert_eq!(
+            map_cons(Running, probe(false, 2, Some(5))),
+            client(Running, Some(SyncState::Synced), Some(5))
+        );
+        assert_eq!(
+            map_cons(Running, probe(false, 2, None)),
+            client(Running, Some(SyncState::Synced), None)
+        );
     }
 
     #[test]
-    fn node_is_worst_of() {
-        assert_eq!(SyncStatus::Synced.worst_of(SyncStatus::Syncing), SyncStatus::Syncing);
-        assert_eq!(SyncStatus::Syncing.worst_of(SyncStatus::Waiting), SyncStatus::Waiting);
-        assert_eq!(SyncStatus::Waiting.worst_of(SyncStatus::Inactive), SyncStatus::Inactive);
-        assert_eq!(SyncStatus::Synced.worst_of(SyncStatus::Synced), SyncStatus::Synced);
+    fn vali_mapping_never_has_sync_or_peers() {
+        for service in [
+            ServiceState::Running,
+            ServiceState::Starting,
+            ServiceState::Stopped,
+            ServiceState::Failed,
+            ServiceState::Unknown,
+        ] {
+            assert_eq!(map_vali(service), client(service, None, None));
+        }
     }
 }

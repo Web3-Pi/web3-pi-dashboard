@@ -16,6 +16,7 @@ These values can be changed without recompiling.
 | `W3P_BEACON_REST` | `http://127.0.0.1:5052` | Beacon node REST endpoint (CONS tile) |
 | `W3P_UNIT_EXEC` | `geth.service` | systemd unit checked for the EXEC tile |
 | `W3P_UNIT_CONS` | `nimbus-beacon-node.service` | systemd unit checked for the CONS tile |
+| `W3P_UNIT_VALI` | `nimbus-validator` | systemd unit checked for the VALI tile (service state only — no sync/peers lines) |
 | `W3P_ETH_POLL_SECONDS` | `10` | Ethereum status poll interval in seconds |
 | `W3P_INSTALL_STATUS_PATH` | `/opt/web3pi/status.jlog` | Install status JSON-lines log. When absent, `/root/.install_stage` (vOS plain integer: `0` = installing, `>= 1` = done) is used; when neither exists the dashboard starts immediately |
 | `W3P_INSTALL_GRACE_SECONDS` | `25` | Startup grace window before fallback to dashboard mode while a status file exists but is unreadable/unparseable |

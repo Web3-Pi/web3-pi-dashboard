@@ -13,7 +13,7 @@ use tracing::warn;
 
 use crate::app::{
     config,
-    state::{AppState, InstallStage},
+    state::{AppState, ClientState, InstallStage},
 };
 
 pub struct FontSet {
@@ -21,6 +21,7 @@ pub struct FontSet {
     pub m: PxScale,
     pub s: PxScale,
     pub xs: PxScale,
+    pub xxs: PxScale,
 }
 
 pub struct Renderer {
@@ -51,6 +52,7 @@ impl Renderer {
                 m: PxScale::from(25.0),
                 s: PxScale::from(20.0),
                 xs: PxScale::from(18.0),
+                xxs: PxScale::from(16.0),
             },
             bg_template,
             logo,
@@ -208,15 +210,9 @@ impl Renderer {
             secondary,
         );
 
-        self.center_text(&mut img, 40, 18, "EXEC", self.fontset.m, secondary);
-        let exec_s = state.chain.exec;
-        self.center_text(&mut img, 40, 50, exec_s.as_label(), self.fontset.xs, Rgb(exec_s.as_color()));
-        self.center_text(&mut img, 120, 18, "NODE", self.fontset.m, secondary);
-        let node_s = state.chain.node;
-        self.center_text(&mut img, 120, 50, node_s.as_label(), self.fontset.xs, Rgb(node_s.as_color()));
-        self.center_text(&mut img, 200, 18, "CONS", self.fontset.m, secondary);
-        let cons_s = state.chain.cons;
-        self.center_text(&mut img, 200, 50, cons_s.as_label(), self.fontset.xs, Rgb(cons_s.as_color()));
+        self.client_tile(&mut img, 40, "EXEC", &state.chain.exec);
+        self.client_tile(&mut img, 120, "CONS", &state.chain.cons);
+        self.client_tile(&mut img, 200, "VALI", &state.chain.vali);
 
         self.center_text(&mut img, 200, 108, "RAM", self.fontset.m, secondary);
         self.center_text(
@@ -327,6 +323,31 @@ impl Renderer {
         Duration::from_millis(1000 / config::ANIM_FPS)
     }
 
+    /// One top-row client tile (~80 px wide, header center at `x`): header,
+    /// systemd service state, then optional sync-state and peer-count lines.
+    /// Measured with JetBrainsMono-Medium.ttf: widest service word
+    /// "starting"/"inactive" = 70 px at xs(18); sync words <= 54 px and
+    /// "888 peers" = 70 px at xxs(16) — all within the 80 px tile. Line
+    /// centers 50/65/80 keep ink (12/11/11 px tall) above the y=93 divider.
+    fn client_tile(&self, img: &mut RgbImage, x: i32, header: &str, client: &ClientState) {
+        let secondary = hex(config::COLOR_TEXT_SECONDARY);
+        self.center_text(img, x, 18, header, self.fontset.m, secondary);
+        self.center_text(
+            img,
+            x,
+            50,
+            client.service.as_label(),
+            self.fontset.xs,
+            Rgb(client.service.as_color()),
+        );
+        if let Some(sync) = client.sync {
+            self.center_text(img, x, 65, sync.as_label(), self.fontset.xxs, Rgb(sync.as_color()));
+        }
+        if let Some(peers) = client.peers {
+            self.center_text(img, x, 80, &format_peers(peers), self.fontset.xxs, secondary);
+        }
+    }
+
     fn stage_line(
         &self,
         img: &mut RgbImage,
@@ -353,6 +374,16 @@ impl Renderer {
         let tx = x - (w as i32 / 2);
         let ty = y - (h as i32 / 2);
         draw_text_mut(img, color, tx, ty, scale, &self.font, text);
+    }
+}
+
+/// "16 peers" fits the ~80 px tile up to 3 digits (70 px measured at
+/// xxs(16)); the compact "p:N" form keeps absurd counts from overflowing.
+fn format_peers(peers: u64) -> String {
+    if peers <= 999 {
+        format!("{peers} peers")
+    } else {
+        format!("p:{peers}")
     }
 }
 
@@ -409,7 +440,15 @@ pub fn blank_frame() -> RgbImage {
 
 #[cfg(test)]
 mod tests {
-    use super::{value_to_hex_color_cpu_usage, value_to_hex_color_cpu_usage_400};
+    use super::{format_peers, value_to_hex_color_cpu_usage, value_to_hex_color_cpu_usage_400};
+
+    #[test]
+    fn peers_caption_forms() {
+        assert_eq!(format_peers(0), "0 peers");
+        assert_eq!(format_peers(16), "16 peers");
+        assert_eq!(format_peers(999), "999 peers");
+        assert_eq!(format_peers(1000), "p:1000");
+    }
 
     #[test]
     fn cpu_color_ranges() {

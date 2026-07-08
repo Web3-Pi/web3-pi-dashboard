@@ -123,14 +123,30 @@ interval, asset dir, install-status path, mock display).
 
 ### What the tiles mean on vOS
 
-| Tile | Source | States |
-|---|---|---|
-| EXEC | `geth.service` + geth JSON-RPC | `inactive` (red): unit not active. `waiting` (yellow): unit active but RPC unreachable, or 0 peers. `syncing` (orange): sync in progress, or head older than 90 s (geth reports "synced" even when offline). `synced` (green): fresh head, ≥1 peer. |
-| NODE | aggregate | Worst of EXEC and CONS. |
-| CONS | `nimbus-beacon-node.service` + beacon REST | Same states; `syncing` while sync distance > 2 slots. |
+The top row shows one tile per Ethereum client, each with up to three lines:
 
-The validator (`nimbus-validator.service`) is **not** shown: it is
-manual-start after LUKS unlock, so `inactive` is normal for it.
+| Tile | Source | Lines |
+|---|---|---|
+| EXEC | `geth.service` + geth JSON-RPC | service state, sync state, peer count |
+| CONS | `nimbus-beacon-node.service` + beacon REST | service state, sync state, peer count |
+| VALI | `nimbus-validator` | service state only |
+
+**Line 1 — systemd service state** (`systemctl is-active`):
+`running` (green), `starting` (yellow, activating/reloading), `stopped`
+(gray, inactive — deliberately not red: a stopped validator is normal unless
+you are staking), `failed` (red), `unknown` (gray, unit missing or
+`systemctl` unavailable).
+
+**Line 2 — sync state** (only while the service is running):
+`synced` (green), `syncing` (orange — sync in progress, or head older than
+90 s: geth reports "synced" even when offline), `no api` (yellow — the
+client's RPC/REST endpoint is unreachable). CONS counts as `synced` when the
+sync distance is ≤ 2 slots and the beacon is not syncing. VALI never has this
+line (the validator client has no sync concept here).
+
+**Line 3 — peer count** (EXEC from `net_peerCount`, CONS from the beacon
+`peer_count` endpoint), shown only when the API responded in the last poll
+cycle. VALI never has this line.
 
 ## Build with mise
 

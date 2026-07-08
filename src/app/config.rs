@@ -110,6 +110,7 @@ pub struct EthStatusConfig {
     pub poll_interval: Duration,
     pub unit_exec: String,
     pub unit_cons: String,
+    pub unit_vali: String,
     pub geth_rpc: String,
     pub beacon_rest: String,
 }
@@ -126,6 +127,8 @@ impl EthStatusConfig {
             unit_exec: std::env::var("W3P_UNIT_EXEC").unwrap_or_else(|_| "geth.service".to_owned()),
             unit_cons: std::env::var("W3P_UNIT_CONS")
                 .unwrap_or_else(|_| "nimbus-beacon-node.service".to_owned()),
+            unit_vali: std::env::var("W3P_UNIT_VALI")
+                .unwrap_or_else(|_| "nimbus-validator".to_owned()),
             geth_rpc: std::env::var("W3P_GETH_RPC")
                 .unwrap_or_else(|_| "http://127.0.0.1:8545".to_owned()),
             beacon_rest: std::env::var("W3P_BEACON_REST")
