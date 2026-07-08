@@ -254,35 +254,51 @@ async fn main() -> Result<()> {
     set.spawn(tasks::install_stage::install_stage_loop(state.clone()));
     set.spawn(tasks::eth_status::eth_status_loop(state.clone(), eth_cfg));
 
-    {
+    // Runtime failures (render loop, background tasks) must exit non-zero so
+    // the systemd unit's Restart=on-failure actually restarts the service.
+    let run_result: Result<()> = {
         let render_future = render_loop(display.as_mut(), &renderer, state.clone());
         tokio::pin!(render_future);
         tokio::select! {
             _ = shutdown_signal() => {
                 info!("Shutdown signal received");
+                Ok(())
             }
             res = &mut render_future => {
                 match res {
-                    Ok(()) => info!("Render loop exited"),
-                    Err(err) => error!("Render loop error: {err}"),
+                    Ok(()) => {
+                        info!("Render loop exited");
+                        Ok(())
+                    }
+                    Err(err) => {
+                        error!("Render loop error: {err:#}");
+                        Err(err.context("render loop"))
+                    }
                 }
             }
             joined = set.join_next() => {
-                if let Some(res) = joined {
-                    match res {
-                        Ok(Ok(())) => info!("Task ended"),
-                        Ok(Err(err)) => error!("Task error: {err}"),
-                        Err(err) => error!("Task panic: {err}"),
+                match joined {
+                    Some(Ok(Ok(()))) | None => {
+                        info!("Task ended");
+                        Ok(())
+                    }
+                    Some(Ok(Err(err))) => {
+                        error!("Task error: {err:#}");
+                        Err(err.context("background task"))
+                    }
+                    Some(Err(err)) => {
+                        error!("Task panic: {err}");
+                        Err(anyhow::Error::new(err).context("background task join"))
                     }
                 }
             }
         }
-    }
+    };
 
     set.abort_all();
     display_final_screen(display.as_mut()).await;
     info!("Hardware Monitor End");
-    Ok(())
+    run_result
 }
 
 #[cfg(test)]

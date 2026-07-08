@@ -31,6 +31,11 @@ install -m 755 "$BIN_SRC" "$BIN_DEST"
 mkdir -p "$ASSET_DEST"
 cp -r "$SCRIPT_DIR/font" "$SCRIPT_DIR/img" "$ASSET_DEST/"
 
+# Remove the legacy unit from pre-vOS installs so two dashboard instances
+# never fight over SPI/GPIO (no-op on fresh systems).
+systemctl disable --now w3p_hwm.service 2>/dev/null || true
+rm -f /etc/systemd/system/w3p_hwm.service
+
 # Deliberately no After=network.target: the service must come up early in
 # boot; the eth/IP tasks tolerate absent network.
 cat <<EOF > "$SERVICE_FILE"
@@ -50,7 +55,10 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now "$SERVICE_NAME.service"
+systemctl enable "$SERVICE_NAME.service"
+# restart (not `enable --now`): picks up a redeployed binary/unit when the
+# service is already running, and still starts it on a fresh install.
+systemctl restart "$SERVICE_NAME.service"
 
 echo "Installed $BIN_DEST, assets in $ASSET_DEST."
 echo "The service $SERVICE_NAME has been created and started."

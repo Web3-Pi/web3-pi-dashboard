@@ -60,16 +60,22 @@ fn parse_jlog(content: &str) -> StatusInputState {
     StatusInputState::Valid(parsed)
 }
 
-/// vOS writes a plain integer (0, 1, 100=done); map it onto the jlog shape
-/// with generic status text.
+/// vOS writes a plain integer to /root/.install_stage: rc.local writes `0` at
+/// first-boot start and `1` once first boot completes; nothing ever writes
+/// `100` today. Semantics therefore differ from the jlog stages: `0` =
+/// installing, `>= 1` = done. Remap onto the jlog shape (0 -> Stage0,
+/// >= 1 -> 100/Done) before handing the value to the shared pipeline.
 fn parse_vos_stage(content: &str) -> StatusInputState {
     let Ok(stage) = content.trim().parse::<i32>() else {
         return StatusInputState::InvalidVosStage;
     };
-    let status_short = if InstallStage::from_raw(stage) == InstallStage::Done {
-        None
+    if stage < 0 {
+        return StatusInputState::InvalidVosStage;
+    }
+    let (stage, status_short) = if stage >= 1 {
+        (100, None)
     } else {
-        Some("Installing...".to_owned())
+        (0, Some("Installing...".to_owned()))
     };
     StatusInputState::Valid(StatusLine {
         status_short,
@@ -242,6 +248,14 @@ mod tests {
         assert_eq!(line.stage.as_ref().and_then(StageValue::to_i32), Some(0));
         assert_eq!(line.status_short.as_deref(), Some("Installing..."));
 
+        // vOS rc.local writes 1 on a fully-operational node: must map to Done.
+        let StatusInputState::Valid(line) = parse_vos_stage("1\n") else {
+            panic!("expected valid stage 1");
+        };
+        let raw = line.stage.as_ref().and_then(StageValue::to_i32).unwrap();
+        assert_eq!(InstallStage::from_raw(raw), InstallStage::Done);
+        assert_eq!(line.status_short, None);
+
         let StatusInputState::Valid(line) = parse_vos_stage(" 100 ") else {
             panic!("expected valid stage 100");
         };
@@ -250,6 +264,7 @@ mod tests {
 
         assert!(matches!(parse_vos_stage("abc"), StatusInputState::InvalidVosStage));
         assert!(matches!(parse_vos_stage(""), StatusInputState::InvalidVosStage));
+        assert!(matches!(parse_vos_stage("-1"), StatusInputState::InvalidVosStage));
     }
 
     #[test]

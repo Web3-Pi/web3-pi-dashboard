@@ -15,6 +15,9 @@ use crate::app::{
 const EXEC_HEAD_MAX_AGE_SECS: u64 = 90;
 /// Consensus sync distance (in slots) still considered "synced".
 const CONS_MAX_SYNC_DISTANCE: u64 = 2;
+/// Bound on `systemctl is-active` (talks to PID 1 over D-Bus, which can block
+/// far longer than the poll interval when systemd is busy, e.g. early in boot).
+const SYSTEMCTL_TIMEOUT_SECONDS: u64 = 3;
 
 #[derive(Debug, Clone, Copy)]
 struct GethProbe {
@@ -44,13 +47,18 @@ fn parse_is_active_lines(stdout: &str) -> (bool, bool) {
 
 /// One systemctl spawn for both units. `systemctl is-active` exits non-zero
 /// when any unit is not active, so the exit code is deliberately ignored.
-/// Returns None only when the spawn itself failed.
+/// Returns None when the spawn failed or timed out.
 async fn unit_states(unit_exec: &str, unit_cons: &str) -> Option<(bool, bool)> {
-    let output = tokio::process::Command::new("systemctl")
-        .args(["is-active", "--", unit_exec, unit_cons])
-        .output()
-        .await
-        .ok()?;
+    let output = time::timeout(
+        Duration::from_secs(SYSTEMCTL_TIMEOUT_SECONDS),
+        tokio::process::Command::new("systemctl")
+            .args(["is-active", "--", unit_exec, unit_cons])
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
     Some(parse_is_active_lines(&String::from_utf8_lossy(&output.stdout)))
 }
 
@@ -200,22 +208,30 @@ pub async fn eth_status_loop(state: SharedState, cfg: EthStatusConfig) -> Result
             }
             None => {
                 if !spawn_failed_logged {
-                    warn!("systemctl is-active spawn failed; keeping last unit states");
+                    warn!("systemctl is-active failed or timed out; keeping last unit states");
                     spawn_failed_logged = true;
                 }
             }
         }
 
-        let geth = if exec_active {
-            probe_geth(&client, &cfg.geth_rpc).await
-        } else {
-            None
-        };
-        let beacon = if cons_active {
-            probe_beacon(&client, &cfg.beacon_rest).await
-        } else {
-            None
-        };
+        // Probe both endpoints concurrently: sequentially the worst case
+        // (5 stalled requests x 3s timeout) would exceed the poll interval.
+        let (geth, beacon) = tokio::join!(
+            async {
+                if exec_active {
+                    probe_geth(&client, &cfg.geth_rpc).await
+                } else {
+                    None
+                }
+            },
+            async {
+                if cons_active {
+                    probe_beacon(&client, &cfg.beacon_rest).await
+                } else {
+                    None
+                }
+            }
+        );
 
         let exec = map_exec(exec_active, geth, now_unix());
         let cons = map_cons(cons_active, beacon);

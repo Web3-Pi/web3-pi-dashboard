@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use gpiocdev::{line::Value, request::Request};
 use image::RgbImage;
 use spidev::{SpiModeFlags, Spidev, SpidevOptions, SpidevTransfer};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::app::config;
 
@@ -42,7 +42,17 @@ fn resolve_gpiochip() -> PathBuf {
         } else {
             PathBuf::from(over)
         };
-        info!(path = %path.display(), "GPIO chip overridden via W3P_GPIOCHIP");
+        let label = chip_label(&path);
+        info!(
+            path = %path.display(),
+            label = label.as_deref().unwrap_or("<unknown>"),
+            "GPIO chip overridden via W3P_GPIOCHIP"
+        );
+        if !label.as_deref().is_some_and(|l| l.starts_with(GPIOCHIP_LABEL_PREFIX)) {
+            warn!(
+                "W3P_GPIOCHIP chip label does not start with '{GPIOCHIP_LABEL_PREFIX}' — this may not be the 40-pin header bank"
+            );
+        }
         return path;
     }
     if let Ok(chips) = gpiocdev::chip::chips() {

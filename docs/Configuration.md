@@ -17,7 +17,7 @@ These values can be changed without recompiling.
 | `W3P_UNIT_EXEC` | `geth.service` | systemd unit checked for the EXEC tile |
 | `W3P_UNIT_CONS` | `nimbus-beacon-node.service` | systemd unit checked for the CONS tile |
 | `W3P_ETH_POLL_SECONDS` | `10` | Ethereum status poll interval in seconds |
-| `W3P_INSTALL_STATUS_PATH` | `/opt/web3pi/status.jlog` | Install status JSON-lines log. When absent, `/root/.install_stage` (vOS plain integer: `0`, `1`, `100`=done) is used; when neither exists the dashboard starts immediately |
+| `W3P_INSTALL_STATUS_PATH` | `/opt/web3pi/status.jlog` | Install status JSON-lines log. When absent, `/root/.install_stage` (vOS plain integer: `0` = installing, `>= 1` = done) is used; when neither exists the dashboard starts immediately |
 | `W3P_INSTALL_GRACE_SECONDS` | `25` | Startup grace window before fallback to dashboard mode while a status file exists but is unreadable/unparseable |
 | `STATE_DIRECTORY` | `/var/lib/w3p-hwm` | Provided by systemd (`StateDirectory=w3p-hwm`); holds `opening.flag` which gates the opening animation |
 
@@ -58,7 +58,7 @@ working directory:
 | Constant | Default | Description |
 |---|---|---|
 | `INSTALL_STATUS_PATH_DEFAULT` | `/opt/web3pi/status.jlog` | Default install status log (see `W3P_INSTALL_STATUS_PATH`) |
-| `VOS_INSTALL_STAGE_PATH` | `/root/.install_stage` | vOS plain-integer install stage file |
+| `VOS_INSTALL_STAGE_PATH` | `/root/.install_stage` | vOS plain-integer install stage file (`0` = installing, `>= 1` = done) |
 | `STATE_DIR_DEFAULT` | `/var/lib/w3p-hwm` | State directory fallback when `STATE_DIRECTORY` is unset |
 
 ### Timing and Polling
