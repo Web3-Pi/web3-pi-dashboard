@@ -1,15 +1,14 @@
-name: Build and Release Dashboard
-
-permissions:
-  contents: write
+name: Build PR Dashboard Artifact
 
 on:
-  push:
-    tags:
-      - "v*" # This will trigger on any tag that starts with v (e.g., v0.1.1, v1.2)
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 jobs:
-  build-and-release:
+  build-pr-artifact:
     runs-on: ubuntu-24.04-arm
 
     steps:
@@ -27,7 +26,7 @@ jobs:
         run: |
           mise run build-aarch64
 
-      - name: Prepare release artifacts
+      - name: Prepare PR artifact
         run: |
           mkdir web3-pi-dashboard-bin
           cp target/aarch64-unknown-linux-gnu/release/w3p-hwm web3-pi-dashboard-bin/hwmonitor
@@ -36,17 +35,9 @@ jobs:
           cp -r img/ web3-pi-dashboard-bin/
           zip -r web3-pi-dashboard-bin.zip web3-pi-dashboard-bin/
 
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
+      - name: Upload PR artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: web3-pi-dashboard-bin.zip
-          name: Release ${{ github.ref_name }}
-          body: |
-            Web3 Pi Dashboard Release ${{ github.ref_name }}
-
-            This release was automatically built and published by GitHub Actions.
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: web3-pi-dashboard-bin
+          path: web3-pi-dashboard-bin.zip
+          if-no-files-found: error

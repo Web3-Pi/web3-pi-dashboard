@@ -1,0 +1,14 @@
+[tools]
+cargo-binstall = "latest"
+zig = "latest"
+"cargo:cargo-zigbuild" = "latest"
+
+[tools.rust]
+version = "latest"
+targets = "aarch64-unknown-linux-gnu"
+
+[tasks.build-aarch64]
+description = "Build release binary for aarch64 using cargo-zigbuild"
+sources = ["Cargo.toml", "Cargo.lock", "src/**/*.rs"]
+outputs = ["target/aarch64-unknown-linux-gnu/release/w3p-hwm"]
+run = "cargo zigbuild --release --bin w3p-hwm --target aarch64-unknown-linux-gnu"

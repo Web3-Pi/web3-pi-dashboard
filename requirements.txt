@@ -1,7 +1,0 @@
-psutil~=6.0.0
-influxdb~=5.3.2
-pillow~=10.4.0
-numpy~=2.0.0
-spidev~=3.6
-netifaces~=0.11.0
-gpiod~=2.4.2
