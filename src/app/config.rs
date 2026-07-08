@@ -1,16 +1,70 @@
-use std::time::Duration;
+use std::{
+    path::PathBuf,
+    sync::OnceLock,
+    time::Duration,
+};
 
 pub const GRID_WIDTH: u32 = 240;
 pub const GRID_HEIGHT: u32 = 280;
 pub const SHOW_PER_CORE: bool = false;
 
-pub const FONT_PATH: &str = "./font/JetBrainsMono-Medium.ttf";
-pub const BG_PATH: &str = "./img/lcdbg.png";
-pub const LOGO_PATH: &str = "./img/web3-pi-logo-240x70.png";
-pub const FINAL_LOGO_PATH: &str = "./img/Web3Pi_logo_0.png";
-pub const ANIM_DIR: &str = "./img/3D/";
-pub const OPENING_FLAG_PATH: &str = "/root/opening.flag";
-pub const INSTALL_STATUS_PATH: &str = "/opt/web3pi/status.jlog";
+pub const INSTALL_STATUS_PATH_DEFAULT: &str = "/opt/web3pi/status.jlog";
+/// vOS first-boot machinery writes a plain integer stage (0, 1, 100=done).
+pub const VOS_INSTALL_STAGE_PATH: &str = "/root/.install_stage";
+pub const STATE_DIR_DEFAULT: &str = "/var/lib/w3p-hwm";
+
+/// Asset root: `W3P_ASSET_DIR`, else the running executable's directory,
+/// else the current working directory.
+pub fn asset_dir() -> PathBuf {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        if let Ok(dir) = std::env::var("W3P_ASSET_DIR") {
+            return PathBuf::from(dir);
+        }
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(parent) = exe.parent()
+        {
+            return parent.to_owned();
+        }
+        PathBuf::from(".")
+    })
+    .clone()
+}
+
+pub fn font_path() -> PathBuf {
+    asset_dir().join("font/JetBrainsMono-Medium.ttf")
+}
+
+pub fn bg_path() -> PathBuf {
+    asset_dir().join("img/lcdbg.png")
+}
+
+pub fn logo_path() -> PathBuf {
+    asset_dir().join("img/web3-pi-logo-240x70.png")
+}
+
+pub fn final_logo_path() -> PathBuf {
+    asset_dir().join("img/Web3Pi_logo_0.png")
+}
+
+pub fn anim_dir() -> PathBuf {
+    asset_dir().join("img/3D")
+}
+
+pub fn install_status_path() -> String {
+    std::env::var("W3P_INSTALL_STATUS_PATH")
+        .unwrap_or_else(|_| INSTALL_STATUS_PATH_DEFAULT.to_owned())
+}
+
+/// Opening-flag lives in the systemd state directory (`STATE_DIRECTORY`,
+/// first entry if multiple), falling back to /var/lib/w3p-hwm.
+pub fn opening_flag_path() -> PathBuf {
+    let dir = std::env::var("STATE_DIRECTORY")
+        .ok()
+        .and_then(|v| v.split(':').next().map(str::to_owned))
+        .unwrap_or_else(|| STATE_DIR_DEFAULT.to_owned());
+    PathBuf::from(dir).join("opening.flag")
+}
 
 pub const ST7789_WIDTH: u16 = 240;
 pub const ST7789_HEIGHT: u16 = 280;

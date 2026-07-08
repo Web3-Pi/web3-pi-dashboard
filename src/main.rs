@@ -79,7 +79,12 @@ async fn preflight_checks() -> Result<()> {
 }
 
 async fn play_animation<D: DisplayBackend + ?Sized>(display: &mut D) -> Result<()> {
-    for frame_path in Renderer::animation_frames() {
+    let frames = Renderer::animation_frames();
+    if frames.is_empty() {
+        warn!(dir = %config::anim_dir().display(), "No opening animation frames found, skipping animation");
+        return Ok(());
+    }
+    for frame_path in frames {
         let frame = Renderer::load_frame(&frame_path)?;
         if frame.width() != config::GRID_WIDTH || frame.height() != config::GRID_HEIGHT {
             continue;
@@ -231,11 +236,13 @@ async fn main() -> Result<()> {
     init_logging();
     info!("Hardware Monitor Start");
     info!(
-        status_path = config::INSTALL_STATUS_PATH,
+        status_path = %config::install_status_path(),
+        vos_stage_path = config::VOS_INSTALL_STAGE_PATH,
+        asset_dir = %config::asset_dir().display(),
         install_grace_seconds = config::install_startup_grace().as_secs(),
         install_warn_rate_limit_seconds = config::INSTALL_WARN_RATE_LIMIT.as_secs(),
         rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "<not-set>".to_owned()),
-        "Runtime install-status diagnostics"
+        "Runtime diagnostics"
     );
 
     if !mock_display_requested() {

@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use chrono::Local;
 use image::{ImageBuffer, Rgb, RgbImage, imageops};
 use imageproc::drawing::{draw_line_segment_mut, draw_text_mut, text_size};
+use tracing::warn;
 
 use crate::app::{
     config,
@@ -31,17 +32,18 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn load() -> Result<Self> {
-        let font_bytes = fs::read(config::FONT_PATH).context("read font")?;
+        let font_bytes = fs::read(config::font_path())
+            .with_context(|| format!("read font {}", config::font_path().display()))?;
         let font = FontArc::try_from_vec(font_bytes).context("parse font")?;
-        let bg_template = image::open(config::BG_PATH)
-            .context("load background")?
+        let bg_template = image::open(config::bg_path())
+            .with_context(|| format!("load background {}", config::bg_path().display()))?
             .resize_exact(
                 config::GRID_WIDTH,
                 config::GRID_HEIGHT,
                 imageops::FilterType::Nearest,
             )
             .to_rgb8();
-        let logo = image::open(config::LOGO_PATH).context("load logo")?.to_rgb8();
+        let logo = image::open(config::logo_path()).context("load logo")?.to_rgb8();
         Ok(Self {
             font,
             fontset: FontSet {
@@ -270,7 +272,7 @@ impl Renderer {
     }
 
     pub fn final_screen() -> Result<RgbImage> {
-        let mut img = image::open(config::FINAL_LOGO_PATH)
+        let mut img = image::open(config::final_logo_path())
             .context("load final logo")?
             .to_rgb8();
         for pixel in img.pixels_mut() {
@@ -283,15 +285,25 @@ impl Renderer {
     }
 
     pub fn opening_needed() -> bool {
-        Path::new(config::OPENING_FLAG_PATH).exists()
+        config::opening_flag_path().exists()
     }
 
     pub fn create_opening_flag() {
-        let _ = fs::write(config::OPENING_FLAG_PATH, []);
+        let path = config::opening_flag_path();
+        let create = || -> std::io::Result<()> {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&path, [])
+        };
+        if let Err(err) = create() {
+            // Non-root dev runs cannot write /var/lib; skip animation gating.
+            warn!(path = %path.display(), "Create opening flag failed, skipping animation gating: {err}");
+        }
     }
 
     pub fn animation_frames() -> Vec<PathBuf> {
-        let mut files = fs::read_dir(config::ANIM_DIR)
+        let mut files = fs::read_dir(config::anim_dir())
             .ok()
             .into_iter()
             .flat_map(|v| v.flatten())

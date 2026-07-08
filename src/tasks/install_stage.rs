@@ -5,7 +5,10 @@ use tokio::{task, time};
 use tracing::{info, warn};
 
 use crate::app::{
-    config::{INSTALL_STATUS_PATH, INSTALL_TASK_INTERVAL, INSTALL_WARN_RATE_LIMIT, install_startup_grace},
+    config::{
+        INSTALL_TASK_INTERVAL, INSTALL_WARN_RATE_LIMIT, VOS_INSTALL_STAGE_PATH,
+        install_startup_grace, install_status_path,
+    },
     state::{InstallStage, SharedState},
 };
 
@@ -36,16 +39,15 @@ impl StageValue {
 #[derive(Debug)]
 enum StatusInputState {
     Valid(StatusLine),
-    MissingFile,
+    /// Neither the jlog nor the vOS stage file exists.
+    NoStatusFile,
     EmptyFile,
     InvalidJson,
     MissingStage,
+    InvalidVosStage,
 }
 
-fn read_status(path: &str) -> StatusInputState {
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return StatusInputState::MissingFile;
-    };
+fn parse_jlog(content: &str) -> StatusInputState {
     let Some(line) = content.lines().rfind(|l| !l.trim().is_empty()) else {
         return StatusInputState::EmptyFile;
     };
@@ -58,6 +60,34 @@ fn read_status(path: &str) -> StatusInputState {
     StatusInputState::Valid(parsed)
 }
 
+/// vOS writes a plain integer (0, 1, 100=done); map it onto the jlog shape
+/// with generic status text.
+fn parse_vos_stage(content: &str) -> StatusInputState {
+    let Ok(stage) = content.trim().parse::<i32>() else {
+        return StatusInputState::InvalidVosStage;
+    };
+    let status_short = if InstallStage::from_raw(stage) == InstallStage::Done {
+        None
+    } else {
+        Some("Installing...".to_owned())
+    };
+    StatusInputState::Valid(StatusLine {
+        status_short,
+        stage: Some(StageValue::Int(stage)),
+        level: None,
+    })
+}
+
+fn read_status(jlog_path: &str, vos_path: &str) -> StatusInputState {
+    if let Ok(content) = std::fs::read_to_string(jlog_path) {
+        return parse_jlog(&content);
+    }
+    match std::fs::read_to_string(vos_path) {
+        Ok(content) => parse_vos_stage(&content),
+        Err(_) => StatusInputState::NoStatusFile,
+    }
+}
+
 fn should_emit_warn(last_warn_at: Option<Instant>) -> bool {
     match last_warn_at {
         Some(at) => at.elapsed() >= INSTALL_WARN_RATE_LIMIT,
@@ -68,6 +98,7 @@ fn should_emit_warn(last_warn_at: Option<Instant>) -> bool {
 pub async fn install_stage_loop(state: SharedState) -> Result<()> {
     let mut interval = time::interval(INSTALL_TASK_INTERVAL);
     interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    let jlog_path = install_status_path();
     let started_at = Instant::now();
     let startup_grace = install_startup_grace();
     let mut last_valid_stage_at: Option<Instant> = None;
@@ -78,7 +109,7 @@ pub async fn install_stage_loop(state: SharedState) -> Result<()> {
     loop {
         interval.tick().await;
 
-        match read_status(INSTALL_STATUS_PATH) {
+        match read_status(&jlog_path, VOS_INSTALL_STAGE_PATH) {
             StatusInputState::Valid(parsed) => {
                 consecutive_parse_failures = 0;
                 last_valid_stage_at = Some(Instant::now());
@@ -129,11 +160,23 @@ pub async fn install_stage_loop(state: SharedState) -> Result<()> {
                     info!(any_error = guard.install.any_error, "Install error state changed");
                 }
             }
+            StatusInputState::NoStatusFile if last_valid_stage_at.is_none() => {
+                // Not an install run: no status source at all — go straight
+                // to the dashboard without waiting out the grace period.
+                if !fallback_applied {
+                    let mut guard = state.write().await;
+                    if guard.install.stage != InstallStage::Done {
+                        info!(status_path = jlog_path, "No install status file found; showing dashboard");
+                        guard.install.stage = InstallStage::Done;
+                    }
+                    fallback_applied = true;
+                }
+            }
             failure_state => {
                 consecutive_parse_failures = consecutive_parse_failures.saturating_add(1);
                 if should_emit_warn(last_warn_log_at) {
                     warn!(
-                        status_path = INSTALL_STATUS_PATH,
+                        status_path = jlog_path,
                         failures = consecutive_parse_failures,
                         state = ?failure_state,
                         "Install status read/parse failed"
@@ -164,7 +207,7 @@ pub async fn install_stage_loop(state: SharedState) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{StageValue, should_emit_warn};
+    use super::{StageValue, StatusInputState, parse_jlog, parse_vos_stage, should_emit_warn};
     use crate::app::state::InstallStage;
     use std::time::{Duration, Instant};
 
@@ -189,5 +232,35 @@ mod tests {
         assert!(should_emit_warn(None));
         assert!(!should_emit_warn(Some(Instant::now())));
         assert!(should_emit_warn(Some(Instant::now() - Duration::from_secs(30))));
+    }
+
+    #[test]
+    fn parse_vos_stage_values() {
+        let StatusInputState::Valid(line) = parse_vos_stage("0\n") else {
+            panic!("expected valid stage 0");
+        };
+        assert_eq!(line.stage.as_ref().and_then(StageValue::to_i32), Some(0));
+        assert_eq!(line.status_short.as_deref(), Some("Installing..."));
+
+        let StatusInputState::Valid(line) = parse_vos_stage(" 100 ") else {
+            panic!("expected valid stage 100");
+        };
+        assert_eq!(line.stage.as_ref().and_then(StageValue::to_i32), Some(100));
+        assert_eq!(line.status_short, None);
+
+        assert!(matches!(parse_vos_stage("abc"), StatusInputState::InvalidVosStage));
+        assert!(matches!(parse_vos_stage(""), StatusInputState::InvalidVosStage));
+    }
+
+    #[test]
+    fn parse_jlog_last_line_wins() {
+        let content = "{\"stage\": 0, \"statusShort\": \"a\"}\n{\"stage\": 1, \"statusShort\": \"b\"}\n";
+        let StatusInputState::Valid(line) = parse_jlog(content) else {
+            panic!("expected valid jlog");
+        };
+        assert_eq!(line.stage.as_ref().and_then(StageValue::to_i32), Some(1));
+        assert!(matches!(parse_jlog(""), StatusInputState::EmptyFile));
+        assert!(matches!(parse_jlog("not json\n"), StatusInputState::InvalidJson));
+        assert!(matches!(parse_jlog("{\"level\": \"INFO\"}\n"), StatusInputState::MissingStage));
     }
 }
