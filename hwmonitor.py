@@ -667,15 +667,15 @@ def is_spi_enabled_config():
 
 def check_python_version():
     """
-    Checks if the current Python version is greater than 3.8.
+    Checks if the current Python version is at least 3.11 (required by Pillow 13).
 
     Returns:
-        bool: True if the current Python version is greater than 3.8, False otherwise.
+        bool: True if the current Python version is 3.11 or newer, False otherwise.
     """
-    required_version = (3, 8)
+    required_version = (3, 11)
     current_version = sys.version_info[:3]
 
-    if current_version > required_version:
+    if current_version >= required_version:
         return True
     return False
 
@@ -692,5 +692,5 @@ if __name__ == '__main__':
             logging.error("Only Raspberry Pi is supported")
             sys.exit("Only Raspberry Pi is supported")
     else:
-        logging.error("Python version is not greater than 3.8")
-        sys.exit("Python version is not greater than 3.8")
+        logging.error("Python 3.11 or newer is required")
+        sys.exit("Python 3.11 or newer is required")

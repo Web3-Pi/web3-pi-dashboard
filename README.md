@@ -21,7 +21,7 @@ for other builds.
 
 ## Requirements
 
-- Python >= 3.9
+- Python >= 3.11
 - Raspberry Pi with Linux, SPI/GPIO access and systemd for service installation
 - [SPI interface enabled](docs/EnableSPI.md) before starting the display
 - 1.69" LCD display with ST7789V2 Driver
